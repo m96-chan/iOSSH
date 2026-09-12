@@ -98,7 +98,7 @@ On 2026-09-12, with Xcode 26.5 / Swift 6.3.2:
 
 - iOS Simulator app build succeeded (iPhone and iPad target families).
 - A Personal Team signed Debug build passed signature validation, installed, and launched on iPhone 17e / iOS 26.6.1 after trusting the developer certificate. The user confirmed a successful connection to a Tailscale SSH server with the initial build.
-- Version 0.1.0 build 3 passed signature, Personal Team profile, and bundled HackGen Regular/Bold checksum checks, then installed on the same iPhone over Wi-Fi. Launch verification was blocked by the device screen lock. The user's Starship theme, Japanese input, screen-lock session resumption, and Tailscale check-mode flow still need physical-device confirmation with this update.
+- Version 0.1.0 build 3 passed signature, Personal Team profile, and bundled HackGen Regular/Bold checksum checks, then installed on the same iPhone over Wi-Fi. After the user unlocked the screen, the updated app launched successfully. The user's Starship theme, Japanese input, screen-lock session resumption, and Tailscale check-mode flow still need physical-device confirmation with this update.
 - SSHCore: 24 unit/protocol tests passed, including Tailscale authentication, bounded authentication banners, and retained-connection probes (peer acknowledgement, refusal, timeout, and cancellation). The optional real OpenSSH test passed during initial validation and was skipped for this update.
 - TerminalCore: 18 tests / 19 parameterized cases passed.
 - App/renderer: 48 tests passed on iPhone 17 / iOS 26.5 Simulator, covering retained-session lifecycle, Tailscale sign-in, HackGen coverage/rasterization, font import/removal/reimport, native Japanese composition, and keyboard viewport geometry.

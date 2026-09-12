@@ -98,7 +98,7 @@ swift test --package-path Packages/SSHCore --filter SSHIntegrationTests
 
 - iPhone / iPad 対象の iOS Simulator 向けアプリビルドが成功。
 - 個人チーム署名の Debug ビルドを署名検証し、iPhone 17e / iOS 26.6.1 にインストール。開発者証明書の信頼後に起動を確認。初期ビルドで Tailscale SSH サーバーに接続できることはユーザーが確認済み。
-- バージョン 0.1.0 build 3 は、署名・個人チームのプロファイル・同梱 HackGen Regular / Bold のチェックサムを検証し、同じ iPhone に Wi-Fi 経由で更新済み。起動確認は実機の画面ロックで停止。ユーザーの Starship テーマ、日本語入力、画面ロックからのセッション復帰、Tailscale check mode は、この更新で実機確認が引き続き必要。
+- バージョン 0.1.0 build 3 は、署名・個人チームのプロファイル・同梱 HackGen Regular / Bold のチェックサムを検証し、同じ iPhone に Wi-Fi 経由で更新済み。ユーザーの画面ロック解除後に更新版の起動を確認。ユーザーの Starship テーマ、日本語入力、画面ロックからのセッション復帰、Tailscale check mode は、この更新で実機確認が引き続き必要。
 - SSHCore: Tailscale 認証・上限付き認証バナー・既存接続の確認（相手の応答、拒否、タイムアウト、待機キャンセル）を含む単体・プロトコルテスト 24 件が成功。任意の実 OpenSSH 結合テストは初期検証で成功し、今回の更新ではスキップ。
 - TerminalCore: 18 テスト / パラメータ化を含む 19 ケースが成功。
 - アプリ・描画: iPhone 17 / iOS 26.5 Simulator で 48 テストが成功。既存接続の保持、Tailscale サインイン、HackGen の収録・ラスタライズ、フォントの取り込み・削除・再取り込み、日本語変換、キーボードの表示領域を確認。
