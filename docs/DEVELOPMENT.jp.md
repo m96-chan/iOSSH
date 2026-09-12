@@ -42,7 +42,11 @@ make device-run DEVICE_ID=YOUR_DEVICE_UDID
 
 ## 接続
 
-ホスト名 / IP、ポート、ユーザー名、認証方法を登録する。資格情報を空にして保存すると、接続時に入力を求める。接続画面で入力した資格情報は、**Save in Keychain** を有効にしない限りその接続だけに使用する。
+ホスト名 / IP、ポート、ユーザー名、認証方法を登録する。パスワード・鍵認証で資格情報を空にして保存すると、接続時に入力を求める。接続画面で入力した資格情報は、**Save in Keychain** を有効にしない限りその接続だけに使用する。
+
+**Tailscale SSH** では、先に iOS の Tailscale アプリを接続する。接続先の MagicDNS 端末名（または完全な `.ts.net` 名 / Tailscale IP）、ポート 22、サーバー上のユーザー名を入力し、Authentication で **Tailscale SSH** を選ぶ。サーバー側で Tailscale SSH が有効で、tailnet の SSH ポリシーが接続を許可している必要がある。この方式は SSH の `none` 認証を使用し、資格情報の読み込み・保存・入力を行わない。既存ホストの認証方法は保持するため、切り替える場合はホストを編集する。名前解決は OS のリゾルバと接続済みの Tailscale アプリを利用する。[Tailscale SSH](https://tailscale.com/docs/features/tailscale-ssh)・[MagicDNS](https://tailscale.com/docs/features/magicdns) を参照。
+
+check mode の承認メッセージは接続中に表示する。Tailscale の HTTPS サインインボタンをタップし、アプリ内の Safari 画面で承認する。この方式では SSH 認証を最大 5 分待機する。リンクを自動で開くことはなく、初回・変更時のホスト鍵検証も行う。外部ブラウザへ移動してアプリがバックグラウンドになると SSH が閉じるため、その場合は承認後に再接続する。
 
 秘密情報は `WhenPasscodeSetThisDeviceOnly` と `biometryCurrentSet` を指定した Keychain に保存し、SwiftData や UserDefaults には書き込まない。保存する前に端末のパスコードと Face ID / Touch ID を設定する。生体認証が利用できない場合も保護を弱めず、接続ごとの入力を利用する。登録済みの生体情報を変更すると、保存済みの資格情報が使えなくなる場合がある。
 
@@ -59,6 +63,10 @@ make device-run DEVICE_ID=YOUR_DEVICE_UDID
 ## ターミナル
 
 ターミナルをタップしてキーボードを表示する。補助行には Ctrl / Esc / Tab / 矢印 / パイプ / チルダを用意。外付けキーボードの修飾キー、アプリケーションカーソルモード、bracketed paste に対応する。上下スワイプで履歴を移動し、長押ししてドラッグすると選択できる。編集メニューまたは Command-C / Command-V でコピー・ペーストする。設定からフォントサイズとダーク / ライトの配色を変更できる。
+
+標準フォントとして **UDEV Gothic NF** の通常・太字・斜体・太字斜体を同梱し、日本語と Starship 用の Nerd Font 記号に対応する。半角と全角の送り幅は 1:2。幅の広い記号もパーサが指定するセル数に収め、Powerline の区切りはセルの端まで描画する。設定では同じフォントのプレビューとライセンスを確認できる。サーバー側のプロンプトの文字幅設定も、端末の Unicode 幅と一致させる必要がある。
+
+最終行は不透明な補助キー行の上に配置する。キーボードの変化・アプリ復帰・再接続時には、その時点のキーボードと補助キー行の位置から表示領域を再計算し、行数・列数を PTY へ送る。
 
 ターミナルの protocol によりビューを SwiftTerm から分離する。パーサの状態は `MainActor` に隔離し、不変のスナップショットでセル、damage、カーソル、画像をレンダラに渡す。スナップショットの通知をまとめ、Metal は上限付きグリフアトラスとトリプルバッファを使用し、各バッファの変更行を更新する。非アクティブ時は描画を停止する。
 
@@ -85,11 +93,12 @@ swift test --package-path Packages/SSHCore --filter SSHIntegrationTests
 2026-09-12、Xcode 26.5 / Swift 6.3.2 で検証:
 
 - iPhone / iPad 対象の iOS Simulator 向けアプリビルドが成功。
-- 個人チーム署名の Debug ビルドを署名検証し、iPhone 17e / iOS 26.6.1 にインストール。開発者証明書の信頼後に起動でき、起動後もアプリのプロセスが動作していることを確認。実機での SSH 接続・操作検証は未実施。
-- SSHCore: 単体・プロトコルテスト 11 件と実 OpenSSH 結合テストが成功。
+- 個人チーム署名の Debug ビルドを署名検証し、iPhone 17e / iOS 26.6.1 にインストール。開発者証明書の信頼後に起動を確認。初期ビルドで Tailscale SSH サーバーに接続できることはユーザーが確認済み。
+- バージョン 0.1.0 build 2 は、署名とアプリ内の 4 種類のフォントを検証し、同じ iPhone に Wi-Fi 経由で更新済み。ユーザーの Starship テーマと Tailscale check mode の実機確認は、この更新で引き続き必要。
+- SSHCore: Tailscale 認証・上限付き認証バナーを含む単体・プロトコルテスト 20 件が成功。任意の実 OpenSSH 結合テストは初期検証で成功し、今回の更新ではスキップ。
 - TerminalCore: 18 テスト / パラメータ化を含む 19 ケースが成功。
-- アプリ接続状態: iPhone 17 / iOS 26.5 Simulator で 7 テストが成功。
-- UI: iPhone 17 で 3 テストが成功。iPad Pro 11-inch (M5) / iOS 26.5 Simulator でもターミナル起動・認証キャンセルが成功。
+- アプリ・描画: iPhone 17 / iOS 26.5 Simulator で 21 テスト / パラメータ化を含む 22 ケースが成功。接続状態、Tailscale サインイン、フォント収録・ラスタライズ、キーボードの表示領域を確認。
+- UI: iPhone 17 で 4 テストが成功。キーボード表示、アプリ復帰、再接続、画面回転を含み、最後の横向きスクリーンショットも確認。初期検証では iPad Pro 11-inch (M5) / iOS 26.5 Simulator のターミナル起動・認証キャンセルも成功。
 - Metal の GPU 描画・ブレンド検証スクリプトが成功。ターミナルと iPad 初回起動画面のスクリーンショットも確認済み。
 
 ## 残る受け入れ検証

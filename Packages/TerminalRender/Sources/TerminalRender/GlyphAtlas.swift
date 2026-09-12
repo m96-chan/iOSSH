@@ -22,6 +22,7 @@ final class GlyphAtlas {
     private(set) var textures: [any MTLTexture] = []
     private let device: any MTLDevice
     private let font: UIFont
+    private let fontName: String
     private let side = 2048
     private var glyphs: [Key: Glyph] = [:]
     private var x = 1
@@ -31,8 +32,9 @@ final class GlyphAtlas {
     init(device: any MTLDevice, configuration: TerminalConfiguration, scale: CGFloat) {
         self.device = device
         self.scale = scale
+        self.fontName = configuration.fontName
         let size = min(32, max(8, configuration.fontSize))
-        self.font = UIFont(name: configuration.fontName, size: size) ?? .monospacedSystemFont(ofSize: size, weight: .regular)
+        self.font = TerminalFont.font(named: configuration.fontName, size: size)
         let advance = ("M" as NSString).size(withAttributes: [.font: font]).width
         cellSize = CGSize(width: ceil(advance * scale) / scale, height: ceil((font.lineHeight + 2) * scale) / scale)
     }
@@ -63,10 +65,7 @@ final class GlyphAtlas {
             shelfHeight = 0
         }
 
-        var traits = font.fontDescriptor.symbolicTraits
-        if bold { traits.insert(.traitBold) }
-        if italic { traits.insert(.traitItalic) }
-        let styledFont = font.fontDescriptor.withSymbolicTraits(traits).map { UIFont(descriptor: $0, size: font.pointSize) } ?? font
+        let styledFont = TerminalFont.font(named: fontName, size: font.pointSize, bold: bold, italic: italic)
         let isColor = text.unicodeScalars.contains { $0.properties.isEmojiPresentation || $0.value == 0xFE0F }
         let bytesPerRow = pixelWidth * 4
         var pixels = [UInt8](repeating: 0, count: bytesPerRow * pixelHeight)
@@ -81,9 +80,34 @@ final class GlyphAtlas {
             context.scaleBy(x: scale, y: scale)
             context.textMatrix = .identity
             let line = CTLineCreateWithAttributedString(NSAttributedString(string: text, attributes: [
-                .font: styledFont, .foregroundColor: UIColor.white
+                .font: styledFont, .foregroundColor: UIColor.white, .ligature: 0
             ]))
-            context.textPosition = CGPoint(x: 0, y: (cellSize.height - styledFont.lineHeight) / 2 - styledFont.descender)
+            let ink = CTLineGetBoundsWithOptions(line, [.useGlyphPathBounds])
+            let slot = CGSize(width: CGFloat(pixelWidth) / scale, height: CGFloat(pixelHeight) / scale)
+            let separator = text.unicodeScalars.count == 1 && text.unicodeScalars.first.map { (0xE0B0...0xE0B7).contains($0.value) } == true
+            if separator, !ink.isEmpty, !ink.isInfinite {
+                // Powerline joins must reach all cell edges, including the line spacing.
+                // Their intentional font bearings otherwise leave seams or crop the arrow.
+                context.scaleBy(x: slot.width / ink.width, y: slot.height / ink.height)
+                context.textPosition = CGPoint(x: -ink.minX, y: -ink.minY)
+            } else if !ink.isEmpty, !ink.isInfinite {
+                // Fallback emoji and Nerd Font icons can have ink substantially wider than
+                // their advance. Fit the complete grapheme into the parser's cell allocation;
+                // never use a shaped advance to position the following terminal cell.
+                let left = min(0, ink.minX)
+                let right = max(CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil)), ink.maxX)
+                let fit = min(1, slot.width / max(1, right - left), slot.height / max(1, ink.height))
+                let originX = (slot.width - (right - left) * fit) / 2 - left * fit
+                let baseline = (cellSize.height - styledFont.lineHeight) / 2 - styledFont.descender
+                let originY = fit < 1
+                    ? (slot.height - ink.height * fit) / 2 - ink.minY * fit
+                    : min(slot.height - ink.maxY, max(-ink.minY, baseline))
+                context.translateBy(x: originX, y: originY)
+                context.scaleBy(x: fit, y: fit)
+                context.textPosition = .zero
+            } else {
+                context.textPosition = CGPoint(x: 0, y: (cellSize.height - styledFont.lineHeight) / 2 - styledFont.descender)
+            }
             CTLineDraw(line, context)
             return true
         }

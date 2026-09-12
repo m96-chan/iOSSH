@@ -28,7 +28,7 @@ final class HostRecord {
 
     var sshHost: SSHHost {
         SSHHost(id: id, name: name, hostname: hostname, port: port, username: username,
-                authentication: authentication == "privateKey" ? .privateKey : .password,
+                authentication: SSHAuthentication(rawValue: authentication) ?? .password,
                 terminalType: terminalType)
     }
 }

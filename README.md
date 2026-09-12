@@ -12,9 +12,11 @@ Designed around image display through the Kitty Graphics Protocol and GPU render
 
 The repository now contains an iPhone/iPad app with SwiftData host management, Keychain credentials, SSH PTY sessions, explicit first-use host key approval, reconnect, and a Metal terminal. The terminal uses the planned **SwiftTerm fallback** behind `TerminalEngine`; no libghostty-vt binary is required.
 
-Implemented authentication: passwords, OpenSSH Ed25519 keys (including supported encrypted keys), and unencrypted ECDSA PEM keys. The current SSH dependency does not implement keyboard-interactive; RSA is also unavailable. These methods are not offered by the app.
+Implemented authentication: passwords, OpenSSH Ed25519 keys (including supported encrypted keys), unencrypted ECDSA PEM keys, and Tailscale SSH using the connected Tailscale app. Choose **Tailscale SSH** to connect by device name without entering a password or key; check-mode sign-in links appear when requested by the server. The current SSH dependency does not implement keyboard-interactive; RSA is also unavailable. These methods are not offered by the app.
 
 Rendering includes a CoreText glyph atlas, instanced Metal drawing, 24-bit colors, keyboard shortcuts and accessory keys, selection/copy/paste, scrollback, and dark/light themes. Kitty direct RGB/RGBA/PNG transfers have bounded storage. Graphics animation, compressed transfers, relative placements, and explicit source cropping remain unsupported. Ordinary image placements are cleared on resize; Unicode placeholder placements follow the text and survive reflow.
+
+The bundled UDEV Gothic NF font provides Japanese and Starship/Nerd Font symbols by default. Glyphs fit the terminal's cell widths, and the visible grid is updated around the keyboard and accessory row when returning to the app or reconnecting.
 
 VT parsing currently runs on `MainActor`. Dedicated parsing isolation, the libghostty-vt backend, Display P3 output, and physical-device 120Hz/power measurements remain follow-up work. Backgrounding closes the connection; reconnect opens a new shell. Use a remote multiplexer when shell continuity is needed.
 

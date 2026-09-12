@@ -1,4 +1,5 @@
 import SwiftUI
+import TerminalRender
 
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
@@ -14,13 +15,23 @@ struct SettingsView: View {
                         Text("Light").tag("light")
                     }
                     Stepper("Font size: \(Int(fontSize)) pt", value: $fontSize, in: 9...32)
-                    Text("user@server ~ %")
-                        .font(.system(size: fontSize, design: .monospaced))
+                    LabeledContent("Font", value: TerminalFont.displayName)
+                    Text("\u{f07c} ~/開発  \u{e0a0} main\n\u{276f} echo 日本語")
+                        .font(Font(TerminalFont.font(ofSize: fontSize)))
                         .foregroundStyle(theme == "dark" ? .white : .black)
                         .padding()
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(theme == "dark" ? Color(white: 0.06) : Color(white: 0.96), in: RoundedRectangle(cornerRadius: 10))
                         .accessibilityLabel("Terminal font preview")
+                    NavigationLink("Font licenses") {
+                        ScrollView {
+                            Text(TerminalFont.licenseText)
+                                .font(.caption)
+                                .textSelection(.enabled)
+                                .padding()
+                        }
+                        .navigationTitle("Font licenses")
+                    }
                 }
                 Section("Using the terminal") {
                     Label("Swipe vertically to browse scrollback.", systemImage: "hand.draw")

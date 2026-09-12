@@ -8,6 +8,7 @@ import TerminalRender
 protocol ConnectionTransport: AnyObject {
     var onData: (@MainActor (Data) -> Void)? { get set }
     var onDisconnect: (@MainActor (String?) -> Void)? { get set }
+    var onAuthenticationBanner: (@MainActor (String) -> Void)? { get set }
     var isConnected: Bool { get }
     func connect(host: SSHHost, credential: SSHCredential, columns: Int, rows: Int,
                  confirmHostKey: @escaping @Sendable (HostKeyChallenge) async -> Bool) async throws
@@ -47,6 +48,8 @@ final class ConnectionModel {
     private(set) var phase: Phase = .idle
     private(set) var snapshot: TerminalSnapshot?
     private(set) var message: String?
+    private(set) var authenticationBanner = ""
+    private(set) var authenticationURL: URL?
     var credentialPrompt = false
     var trustPrompt: TrustPrompt?
     @ObservationIgnored private let dependencies: Dependencies
@@ -74,9 +77,15 @@ final class ConnectionModel {
         attempt = token
         phase = .connecting
         message = nil
+        authenticationBanner = ""
+        authenticationURL = nil
         do {
             var credential: SSHCredential?
-            if !enterCredential { credential = try await dependencies.loadCredential(host.id) }
+            if host.authentication == .tailscale {
+                credential = SSHCredential()
+            } else if !enterCredential {
+                credential = try await dependencies.loadCredential(host.id)
+            }
             guard attempt == token, !Task.isCancelled else { return }
             if credential == nil {
                 let reply = await askForCredential()
@@ -91,6 +100,14 @@ final class ConnectionModel {
             guard attempt == token, !Task.isCancelled, let credential else { return }
             let transport = try dependencies.makeTransport()
             session = transport
+            transport.onAuthenticationBanner = { [weak self] banner in
+                guard let self, self.attempt == token, self.phase == .connecting else { return }
+                let separator = self.authenticationBanner.isEmpty ? "" : "\n"
+                self.authenticationBanner = String((self.authenticationBanner + separator + banner).prefix(16_384))
+                if self.host.authentication == .tailscale {
+                    self.authenticationURL = TailscaleAuthentication.loginURL(in: self.authenticationBanner)
+                }
+            }
             transport.onData = { [weak self] data in
                 guard let self, self.attempt == token else { return }
                 self.engine.feed(data)
@@ -99,6 +116,8 @@ final class ConnectionModel {
                 guard let self, self.attempt == token else { return }
                 self.phase = .disconnected
                 self.message = reason ?? "The remote session ended."
+                self.authenticationBanner = ""
+                self.authenticationURL = nil
                 self.input?.finish()
                 self.writerTask?.cancel()
             }
@@ -123,6 +142,8 @@ final class ConnectionModel {
                 if columns == engine.columns, rows == engine.rows { break }
             }
             phase = .connected
+            authenticationBanner = ""
+            authenticationURL = nil
         } catch {
             guard attempt == token else { return }
             answerTrust(false)
@@ -132,6 +153,7 @@ final class ConnectionModel {
             writerTask?.cancel()
             phase = .failed
             message = error.localizedDescription
+            authenticationURL = nil
         }
     }
 
@@ -145,6 +167,8 @@ final class ConnectionModel {
         snapshotTask = nil
         phase = .disconnected
         self.message = message
+        authenticationBanner = ""
+        authenticationURL = nil
         let oldSession = session
         session = nil
         await oldSession?.disconnect()

@@ -2,6 +2,8 @@ import Foundation
 
 public enum SSHAuthentication: String, Codable, CaseIterable, Sendable {
     case password, privateKey, keyboardInteractive
+    /// Uses the identity of the already-connected Tailscale network; no SSH secret is sent.
+    case tailscale
 }
 
 public struct SSHHost: Codable, Hashable, Identifiable, Sendable {

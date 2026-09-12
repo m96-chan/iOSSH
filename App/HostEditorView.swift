@@ -46,11 +46,13 @@ struct HostEditorView: View {
                     Picker("Authentication", selection: $authentication) {
                         Text("Password").tag("password")
                         Text("Private key").tag("privateKey")
+                        Text("Tailscale SSH").tag("tailscale")
                     }
+                    .accessibilityIdentifier("hostAuthentication")
                     if authentication == "password" {
                         SecureField("Password (optional)", text: $password)
                             .textContentType(.password)
-                    } else {
+                    } else if authentication == "privateKey" {
                         VStack(alignment: .leading) {
                             Text("Private key").font(.subheadline)
                             TextEditor(text: $privateKey)
@@ -62,13 +64,18 @@ struct HostEditorView: View {
                         SecureField("Key passphrase (if required)", text: $passphrase)
                     }
                 } footer: {
-                    Text(host == nil
-                         ? "A supplied credential is saved in Keychain with biometric protection. Leave it empty to enter it when connecting."
-                         : "Leave the credential empty to keep the saved one. New credentials replace it in Keychain.")
+                    if authentication == "tailscale" {
+                        Text("Connect the Tailscale app first, then enter your server's device name or Tailscale IP and its username. Tailscale SSH uses your tailnet identity; no password or private key is needed.")
+                        Text("Use port 22 with Tailscale SSH enabled on the server. Any additional sign-in approval will appear when connecting.")
+                    } else {
+                        Text(host == nil
+                             ? "A supplied credential is saved in Keychain with biometric protection. Leave it empty to enter it when connecting."
+                             : "Leave the credential empty to keep the saved one. New credentials replace it in Keychain.")
+                        Text("Keyboard-interactive authentication is not supported yet.")
+                    }
                     if authentication == "privateKey" {
                         Text("Use an Ed25519 key in OpenSSH format or an unencrypted ECDSA key in PEM format. RSA keys are not supported yet.")
                     }
-                    Text("Keyboard-interactive authentication is not supported yet.")
                 }
                 .autocorrectionDisabled()
                 .textInputAutocapitalization(.never)
@@ -111,9 +118,11 @@ struct HostEditorView: View {
         defer { saving = false }
         let id = host?.id ?? UUID()
         do {
-            let hasCredential = authentication == "password" ? !password.isEmpty : !trim(privateKey).isEmpty
+            let hasCredential = (authentication == "password" && !password.isEmpty)
+                || (authentication == "privateKey" && !trim(privateKey).isEmpty)
             try SSHHost(name: trim(name), hostname: trim(hostname), port: Int(port) ?? 0,
-                        username: trim(username), terminalType: trim(terminalType)).validate()
+                        username: trim(username), authentication: SSHAuthentication(rawValue: authentication) ?? .password,
+                        terminalType: trim(terminalType)).validate()
             if hasCredential {
                 let credential = SSHCredential(password: authentication == "password" ? password : nil,
                                                privateKey: authentication == "privateKey" ? privateKey : nil,

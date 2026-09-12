@@ -10,6 +10,9 @@ import NIOPosix
 public final class SSHSession {
     public var onData: (@MainActor (Data) -> Void)?
     public var onDisconnect: (@MainActor (String?) -> Void)?
+    /// Informational server text during authentication, including Tailscale check-mode links.
+    /// Treat it as untrusted text; this callback never opens a URL or approves authentication.
+    public var onAuthenticationBanner: (@MainActor (String) -> Void)?
     public private(set) var isConnected = false
     private let knownHosts: KnownHostsStore
     private var transport: Channel?
@@ -17,22 +20,43 @@ public final class SSHSession {
     private var readTask: Task<Void, Never>?
     private var generation = UUID()
     private var connecting = false
+    private var connectionLifetime: SSHConnectionLifetime?
 
     public init(knownHosts: KnownHostsStore) { self.knownHosts = knownHosts }
 
     deinit {
+        connectionLifetime?.invalidate()
         readTask?.cancel()
         transport?.close(promise: nil)
     }
 
     public func connect(host: SSHHost, credential: SSHCredential, columns: Int = 80, rows: Int = 24,
                         confirmHostKey: @escaping @Sendable (HostKeyChallenge) async -> Bool) async throws {
+        let attempt = UUID()
+        let lifetime = SSHConnectionLifetime()
+        try await withTaskCancellationHandler {
+            try await connect(host: host, credential: credential, columns: columns, rows: rows,
+                              confirmHostKey: confirmHostKey, attempt: attempt, lifetime: lifetime)
+        } onCancel: {
+            // Invalidate synchronously so queued banner callbacks cannot outlive cancellation.
+            lifetime.invalidate()
+            Task { @MainActor [weak self] in
+                guard let self, self.generation == attempt else { return }
+                await self.disconnect()
+            }
+        }
+    }
+
+    private func connect(host: SSHHost, credential: SSHCredential, columns: Int, rows: Int,
+                         confirmHostKey: @escaping @Sendable (HostKeyChallenge) async -> Bool,
+                         attempt: UUID, lifetime: SSHConnectionLifetime) async throws {
         guard !connecting, !isConnected else { throw SSHSessionError.alreadyConnecting }
+        try Task.checkCancellation()
         try host.validate()
         try Self.validateSize(columns: columns, rows: rows)
         connecting = true
-        let attempt = UUID()
         generation = attempt
+        connectionLifetime = lifetime
         defer { if generation == attempt { connecting = false } }
         do {
             // Parsing an encrypted key can be expensive; keep it off the main actor.
@@ -44,6 +68,13 @@ public final class SSHSession {
             let authenticated = eventLoop.makePromise(of: Void.self)
             let validator = PersistentHostKeyValidator(hostname: host.hostname, port: host.port,
                                                        store: knownHosts, confirm: confirmHostKey)
+            let onBanner: @Sendable (String) -> Void = { [weak self] message in
+                Task { @MainActor [weak self] in
+                    guard lifetime.isActive, let self, self.generation == attempt,
+                          self.connecting, !self.isConnected else { return }
+                    self.onAuthenticationBanner?(message)
+                }
+            }
             let channel = try await ClientBootstrap(group: eventLoop)
                 .connectTimeout(.seconds(30))
                 .channelOption(ChannelOptions.socketOption(.so_keepalive), value: 1)
@@ -62,7 +93,7 @@ public final class SSHSession {
                                           inboundChildChannelInitializer: { child, _ in
                                               child.eventLoop.makeFailedFuture(SSHSessionError.requestRejected)
                                           }),
-                            SSHHandshakeHandler(authenticated: authenticated)
+                            SSHHandshakeHandler(authenticated: authenticated, onBanner: onBanner)
                         )
                         return channel.eventLoop.makeSucceededVoidFuture()
                     } catch { return channel.eventLoop.makeFailedFuture(error) }
@@ -73,7 +104,7 @@ public final class SSHSession {
                 throw CancellationError()
             }
             transport = channel
-            let authenticationTimeout = eventLoop.scheduleTask(in: .seconds(120)) {
+            let authenticationTimeout = eventLoop.scheduleTask(in: Authentication.timeout(for: host.authentication)) {
                 authenticated.fail(SSHSessionError.connectionTimedOut)
                 channel.close(promise: nil)
             }
@@ -149,6 +180,8 @@ public final class SSHSession {
     }
 
     public func disconnect() async {
+        connectionLifetime?.invalidate()
+        connectionLifetime = nil
         generation = UUID()
         connecting = false
         isConnected = false
@@ -176,4 +209,14 @@ public final class SSHSession {
             throw SSHSessionError.invalidConfiguration
         }
     }
+}
+
+/// Shared only to synchronously suppress banner delivery when a connection task is canceled.
+/// The channel and all session state remain confined to their event loop/main actor.
+private final class SSHConnectionLifetime: @unchecked Sendable {
+    private let lock = NSLock()
+    private var active = true
+
+    var isActive: Bool { lock.withLock { active } }
+    func invalidate() { lock.withLock { active = false } }
 }

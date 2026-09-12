@@ -1,4 +1,5 @@
 import SSHCore
+import SafariServices
 import SwiftUI
 import TerminalCore
 import TerminalRender
@@ -10,6 +11,7 @@ struct TerminalScreen: View {
     @AppStorage("terminal.theme") private var themeName = "dark"
     @State private var model: ConnectionModel
     @State private var showingSettings = false
+    @State private var authenticationPage: AuthenticationPage?
 
     init(host: SSHHost) { _model = State(initialValue: ConnectionModel(host: host)) }
     private var theme: TerminalTheme { themeName == "light" ? .light : .dark }
@@ -33,6 +35,26 @@ struct TerminalScreen: View {
                     }
                     .padding(12)
                     .background(.bar)
+                }
+                if model.phase == .connecting, !model.authenticationBanner.isEmpty {
+                    VStack(alignment: .leading, spacing: 8) {
+                        ScrollView {
+                            Text(model.authenticationBanner)
+                                .font(.footnote)
+                                .textSelection(.enabled)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .frame(maxHeight: 112)
+                        if let url = model.authenticationURL {
+                            Button("Sign in at \(url.host ?? "Tailscale")", systemImage: "arrow.up.right.square") {
+                                authenticationPage = AuthenticationPage(url: url)
+                            }
+                            .accessibilityIdentifier("tailscaleSignIn")
+                        }
+                    }
+                    .padding(12)
+                    .background(.bar)
+                    .accessibilityIdentifier("authenticationBanner")
                 }
                 TerminalView(snapshot: model.snapshot,
                              configuration: TerminalConfiguration(fontSize: fontSize, theme: theme),
@@ -59,13 +81,16 @@ struct TerminalScreen: View {
                         Button("Scroll to Bottom", systemImage: "arrow.down.to.line") { model.engine.scrollToBottom() }
                         if model.phase == .connected {
                             Button("Disconnect", systemImage: "network.slash") { Task { await model.close() } }
-                        } else if model.phase != .connecting {
+                        } else if model.phase != .connecting, model.host.authentication != .tailscale {
                             Button("Enter Credentials", systemImage: "key") { Task { await model.connect(enterCredential: true) } }
                         }
                     } label: { Label("Terminal options", systemImage: "ellipsis.circle") }
                 }
             }
             .sheet(isPresented: $showingSettings) { SettingsView() }
+            .sheet(item: $authenticationPage) { page in
+                AuthenticationBrowser(url: page.url)
+            }
             .sheet(isPresented: $model.credentialPrompt, onDismiss: { model.credentialSheetDidDismiss() }) {
                 CredentialPromptView(host: model.host) { model.submitCredential($0) }
             }
@@ -82,12 +107,44 @@ struct TerminalScreen: View {
                 await model.connect()
             }
             .onChange(of: themeName) { _, _ in model.apply(theme: theme) }
+            .onChange(of: model.phase) { _, phase in
+                if phase != .connecting { authenticationPage = nil }
+            }
             .onChange(of: scenePhase) { _, phase in
                 if phase == .background {
                     Task { await model.close(message: "The app entered the background. Reconnect to open a new shell.") }
                 }
             }
             .onDisappear { Task { await model.close() } }
+        }
+    }
+}
+
+private struct AuthenticationPage: Identifiable {
+    let url: URL
+    var id: String { url.absoluteString }
+}
+
+private struct AuthenticationBrowser: UIViewControllerRepresentable {
+    @Environment(\.dismiss) private var dismiss
+    let url: URL
+
+    func makeCoordinator() -> Coordinator { Coordinator(dismiss: dismiss) }
+
+    func makeUIViewController(context: Context) -> SFSafariViewController {
+        let browser = SFSafariViewController(url: url)
+        browser.dismissButtonStyle = .done
+        browser.delegate = context.coordinator
+        return browser
+    }
+
+    func updateUIViewController(_ browser: SFSafariViewController, context: Context) {}
+
+    @MainActor final class Coordinator: NSObject, SFSafariViewControllerDelegate {
+        let dismiss: DismissAction
+        init(dismiss: DismissAction) { self.dismiss = dismiss }
+        nonisolated func safariViewControllerDidFinish(_ controller: SFSafariViewController) {
+            Task { @MainActor in self.dismiss() }
         }
     }
 }

@@ -32,13 +32,15 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: moe.technologies.iossh
         PRODUCT_NAME: iOSSH
         MARKETING_VERSION: 0.1.0
-        CURRENT_PROJECT_VERSION: 1
+        CURRENT_PROJECT_VERSION: 2
         TARGETED_DEVICE_FAMILY: "1,2"
         GENERATE_INFOPLIST_FILE: false
     info:
       path: App/Info.plist
       properties:
         CFBundleDisplayName: iOSSH
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         LSRequiresIPhoneOS: true
         UILaunchScreen: {}
         NSFaceIDUsageDescription: Unlock your saved SSH credentials.

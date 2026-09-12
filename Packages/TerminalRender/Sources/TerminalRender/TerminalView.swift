@@ -84,6 +84,8 @@ public final class TerminalMetalView: MTKView, UIKeyInput, @preconcurrency UIEdi
     private var terminalConfiguration: TerminalConfiguration
     private var lastGridSize = CGSize.zero
     private var lastCellPixels = CGSize.zero
+    private var visibleViewport = CGRect.zero
+    private var viewportPublicationScheduled = false
     private var snapshot: TerminalSnapshot?
     private var cursorTimer: Timer?
     private var controlPressed = false
@@ -104,6 +106,8 @@ public final class TerminalMetalView: MTKView, UIKeyInput, @preconcurrency UIEdi
         framebufferOnly = true
         colorPixelFormat = .bgra8Unorm_srgb
         autoResizeDrawable = true
+        // Keep floating iPad keyboards from reducing the entire terminal viewport.
+        keyboardLayoutGuide.followsUndockedKeyboard = false
         isMultipleTouchEnabled = true
         isAccessibilityElement = true
         accessibilityLabel = "Terminal"
@@ -123,6 +127,8 @@ public final class TerminalMetalView: MTKView, UIKeyInput, @preconcurrency UIEdi
         NotificationCenter.default.addObserver(self, selector: #selector(resignedActive), name: UIApplication.willResignActiveNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(becameActive), name: UIApplication.didBecomeActiveNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(memoryWarning), name: UIApplication.didReceiveMemoryWarningNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(keyboardFrameChanged(_:)), name: UIResponder.keyboardWillChangeFrameNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(keyboardFrameChanged(_:)), name: UIResponder.keyboardDidChangeFrameNotification, object: nil)
         configure(configuration)
     }
 
@@ -135,6 +141,27 @@ public final class TerminalMetalView: MTKView, UIKeyInput, @preconcurrency UIEdi
         get { snapshot.map(visibleText) }
         set { }
     }
+    public override var accessibilityFrame: CGRect {
+        get { UIAccessibility.convertToScreenCoordinates(visibleViewport, in: self) }
+        set { }
+    }
+
+    @discardableResult public override func becomeFirstResponder() -> Bool {
+        let result = super.becomeFirstResponder()
+        requestViewportRefresh()
+        return result
+    }
+
+    @discardableResult public override func resignFirstResponder() -> Bool {
+        let result = super.resignFirstResponder()
+        requestViewportRefresh()
+        return result
+    }
+
+    public override func safeAreaInsetsDidChange() {
+        super.safeAreaInsetsDidChange()
+        requestViewportRefresh()
+    }
 
     public override func didMoveToWindow() {
         super.didMoveToWindow()
@@ -144,7 +171,7 @@ public final class TerminalMetalView: MTKView, UIKeyInput, @preconcurrency UIEdi
             renderer?.configure(terminalConfiguration, scale: screen.scale)
             renderer?.isActive = UIApplication.shared.applicationState == .active
             restartCursorTimer()
-            setNeedsLayout()
+            requestViewportRefresh(forcePublication: true)
             setNeedsDisplay()
         } else { stop() }
     }
@@ -152,18 +179,61 @@ public final class TerminalMetalView: MTKView, UIKeyInput, @preconcurrency UIEdi
     public override func layoutSubviews() {
         super.layoutSubviews()
         errorLabel?.frame = bounds.insetBy(dx: 16, dy: 16)
-        guard let size = renderer?.cellSize, size.width > 0, size.height > 0,
-              bounds.width > 0, bounds.height > 0 else { return }
-        let grid = CGSize(width: max(2, floor(bounds.width / size.width)), height: max(1, floor(bounds.height / size.height)))
+        visibleViewport = TerminalViewportLayout.visibleBounds(
+            in: bounds, safeAreaBottom: safeAreaInsets.bottom,
+            keyboardFrame: keyboardLayoutGuide.layoutFrame, accessoryFrame: accessoryFrameInTerminal()
+        )
+        scheduleViewportPublication()
+    }
+
+    private func accessoryFrameInTerminal() -> CGRect? {
+        guard let terminalWindow = window, let accessoryWindow = accessory.window,
+              terminalWindow.screen === accessoryWindow.screen, !accessoryWindow.isHidden else { return nil }
+        var ancestor: UIView? = accessory
+        while let view = ancestor {
+            if view.isHidden || view.alpha <= 0 { return nil }
+            ancestor = view.superview
+        }
+        // The keyboard owns a separate UIWindow. UIView.convert requires a shared
+        // window, so bridge through UIWindow's cross-window conversion explicitly.
+        let inAccessoryWindow = accessory.convert(accessory.bounds, to: accessoryWindow)
+        let inTerminalWindow = accessoryWindow.convert(inAccessoryWindow, to: terminalWindow)
+        return convert(inTerminalWindow, from: terminalWindow)
+    }
+
+    private func requestViewportRefresh(forcePublication: Bool = false) {
+        if forcePublication {
+            lastGridSize = .zero
+            lastCellPixels = .zero
+        }
+        setNeedsLayout()
+        scheduleViewportPublication()
+    }
+
+    private func scheduleViewportPublication() {
+        guard !viewportPublicationScheduled else { return }
+        viewportPublicationScheduled = true
+        // Read the latest geometry after UIKit and SwiftUI finish their layout changes;
+        // queued callbacks must not replay an obsolete pre-keyboard PTY size.
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.layoutIfNeeded()
+            self.publishViewport()
+            self.viewportPublicationScheduled = false
+        }
+    }
+
+    private func publishViewport() {
+        guard let size = renderer?.cellSize,
+              let grid = TerminalViewportLayout.gridSize(in: visibleViewport, cellSize: size) else { return }
         let pixels = CGSize(width: round(size.width * contentScaleFactor), height: round(size.height * contentScaleFactor))
-        // Dispatch out of SwiftUI's update/layout transaction before publishing engine state.
         if pixels != lastCellPixels {
             lastCellPixels = pixels
-            DispatchQueue.main.async { [weak self] in self?.onCellSize?(Int(pixels.width), Int(pixels.height)) }
+            onCellSize?(Int(pixels.width), Int(pixels.height))
         }
         if grid != lastGridSize {
             lastGridSize = grid
-            DispatchQueue.main.async { [weak self] in self?.onResize?(Int(grid.width), Int(grid.height)) }
+            onResize?(Int(grid.width), Int(grid.height))
         }
     }
 
@@ -188,6 +258,7 @@ public final class TerminalMetalView: MTKView, UIKeyInput, @preconcurrency UIEdi
         if snapshot?.columns != value?.columns || snapshot?.rows != value?.rows || snapshot?.scrollbackOffset != value?.scrollbackOffset {
             clearSelection()
         }
+        if snapshot?.columns != value?.columns || snapshot?.rows != value?.rows { requestViewportRefresh() }
         let cursorChanged = snapshot?.cursor != value?.cursor
         snapshot = value
         renderer?.update(value)
@@ -448,12 +519,17 @@ public final class TerminalMetalView: MTKView, UIKeyInput, @preconcurrency UIEdi
     }
 
     @objc private func resignedActive() { stop() }
+    @objc private func keyboardFrameChanged(_ notification: Notification) {
+        if let screen = notification.object as? UIScreen, let window, screen !== window.screen { return }
+        requestViewportRefresh()
+    }
     @objc private func memoryWarning() {
         renderer?.purgeCaches()
         setNeedsDisplay()
     }
     @objc private func becameActive() {
         renderer?.isActive = window != nil
+        requestViewportRefresh(forcePublication: true)
         restartCursorTimer()
         setNeedsDisplay()
     }
@@ -468,7 +544,11 @@ public final class TerminalMetalView: MTKView, UIKeyInput, @preconcurrency UIEdi
     }
 
     private func makeAccessory() -> UIView {
-        let container = UIInputView(frame: CGRect(x: 0, y: 0, width: 390, height: 44), inputViewStyle: .keyboard)
+        let container = TerminalAccessoryView(frame: CGRect(x: 0, y: 0, width: 390, height: 44), inputViewStyle: .default)
+        container.backgroundColor = .secondarySystemBackground
+        container.isOpaque = true
+        container.onGeometryChange = { [weak self] in self?.requestViewportRefresh() }
+        container.accessibilityIdentifier = "terminalAccessory"
         let scroll = UIScrollView()
         scroll.translatesAutoresizingMaskIntoConstraints = false
         scroll.showsHorizontalScrollIndicator = false
@@ -496,6 +576,7 @@ public final class TerminalMetalView: MTKView, UIKeyInput, @preconcurrency UIEdi
             self.controlButton?.isSelected = self.controlPressed
         }
         control.accessibilityLabel = "Control modifier"
+        control.accessibilityIdentifier = "terminalAccessoryControl"
         controlButton = control
         let keys: [(String, TerminalKey)] = [("Esc", .escape), ("Tab", .tab), ("←", .left), ("↓", .down), ("↑", .up), ("→", .right)]
         for (title, key) in keys { _ = button(title) { [weak self] in self?.send(key) } }
@@ -523,5 +604,27 @@ public final class TerminalMetalView: MTKView, UIKeyInput, @preconcurrency UIEdi
         label.textColor = .secondaryLabel
         addSubview(label)
         errorLabel = label
+    }
+}
+
+/// UIKit can reattach the accessory after scene activation without resizing the
+/// SwiftUI representable. Its actual geometry is another viewport invalidation source.
+@MainActor
+private final class TerminalAccessoryView: UIInputView {
+    var onGeometryChange: (() -> Void)?
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        onGeometryChange?()
+    }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        onGeometryChange?()
+    }
+
+    override func safeAreaInsetsDidChange() {
+        super.safeAreaInsetsDidChange()
+        onGeometryChange?()
     }
 }

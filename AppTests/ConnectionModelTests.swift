@@ -27,12 +27,15 @@ private final class Suspension {
 private final class TestTransport: ConnectionTransport {
     var onData: (@MainActor (Data) -> Void)?
     var onDisconnect: (@MainActor (String?) -> Void)?
+    var onAuthenticationBanner: (@MainActor (String) -> Void)?
     var isConnected = false
     var connectionSuspension: Suspension?
     var writeSuspension: Suspension?
     var resizeSuspension: Suspension?
     var disconnectWhileConnecting: String?
     var requiresTrust = false
+    var authenticationBannerOnConnect: String?
+    private(set) var receivedCredential: SSHCredential?
     private(set) var initialSize: [Int]?
     private(set) var sizes: [[Int]] = []
     private(set) var writes: [Data] = []
@@ -43,6 +46,8 @@ private final class TestTransport: ConnectionTransport {
     func connect(host: SSHHost, credential: SSHCredential, columns: Int, rows: Int,
                  confirmHostKey: @escaping @Sendable (HostKeyChallenge) async -> Bool) async throws {
         initialSize = [columns, rows]
+        receivedCredential = credential
+        if let banner = authenticationBannerOnConnect { onAuthenticationBanner?(banner) }
         await connectionSuspension?.wait()
         if requiresTrust {
             let challenge = HostKeyChallenge(hostname: host.hostname, port: host.port,
@@ -103,6 +108,72 @@ struct ConnectionModelTests {
     }
 
     private enum WaitError: Error { case timedOut }
+
+    @Test(arguments: [false, true])
+    func tailscaleConnectsWithoutLoadingOrPromptingForSecrets(enterCredential: Bool) async {
+        let transport = TestTransport()
+        var tailscaleHost = host
+        tailscaleHost.authentication = .tailscale
+        let model = ConnectionModel(host: tailscaleHost, dependencies: dependencies(transport) { _ in
+            Issue.record("Tailscale SSH must not access saved passwords or keys")
+            return nil
+        })
+        await model.connect(enterCredential: enterCredential)
+        #expect(model.phase == .connected)
+        #expect(!model.credentialPrompt)
+        #expect(transport.receivedCredential == SSHCredential())
+        await model.close()
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func tailscaleApprovalAppearsWhileConnectingAndStaleBannersAreIgnored() async throws {
+        let transport = TestTransport()
+        let authentication = Suspension()
+        transport.connectionSuspension = authentication
+        transport.authenticationBannerOnConnect = "Authenticate at https://login.tailscale.com/a/test-approval"
+        var tailscaleHost = host
+        tailscaleHost.authentication = .tailscale
+        let model = ConnectionModel(host: tailscaleHost, dependencies: dependencies(transport))
+        let connecting = Task { await model.connect() }
+        defer {
+            authentication.release()
+            connecting.cancel()
+            Task { await model.close() }
+        }
+        try await waitUntil { authentication.arrived }
+        #expect(model.phase == .connecting)
+        #expect(model.authenticationURL?.absoluteString == "https://login.tailscale.com/a/test-approval")
+        #expect(model.authenticationBanner.contains("Authenticate"))
+        transport.onAuthenticationBanner?("Please complete the sign-in to continue.")
+        #expect(model.authenticationURL?.absoluteString == "https://login.tailscale.com/a/test-approval")
+        let staleBanner = transport.onAuthenticationBanner
+        authentication.release()
+        await connecting.value
+        #expect(model.phase == .connected)
+        #expect(model.authenticationURL == nil)
+        #expect(model.authenticationBanner.isEmpty)
+        await model.close()
+        staleBanner?("https://login.tailscale.com/a/stale")
+        #expect(model.authenticationBanner.isEmpty)
+        #expect(model.authenticationURL == nil)
+    }
+
+    @Test
+    func savedTailscaleHostPreservesItsAuthenticationMode() {
+        let record = HostRecord(name: "Tailnet", hostname: "my-server", username: "developer", authentication: "tailscale")
+        #expect(record.sshHost.authentication == .tailscale)
+        #expect(record.sshHost.hostname == "my-server")
+    }
+
+    @Test
+    func tailscaleSignInLinksRequireTheExpectedHTTPSOrigin() {
+        #expect(TailscaleAuthentication.loginURL(in: "Visit https://login.tailscale.com/a/approval.")?.path == "/a/approval")
+        for text in ["http://login.tailscale.com/a/approval", "https://tailscale.com.evil.test/a/approval",
+                     "https://eviltailscale.com/a/approval", "https://user:password@login.tailscale.com/a/approval",
+                     "https://login.tailscale.com:444/a/approval", "javascript:alert(1)"] {
+            #expect(TailscaleAuthentication.loginURL(in: text) == nil)
+        }
+    }
 
     @Test(.timeLimit(.minutes(1)))
     func canceledCredentialPromptCannotChangeNewAttemptsPhase() async throws {

@@ -12,9 +12,11 @@ Kitty Graphics Protocol による画像表示と、Metal による GPU レンダ
 
 iPhone / iPad アプリとして、SwiftData のホスト管理、Keychain の資格情報保存、SSH の PTY セッション、初回ホスト鍵の明示的な承認、再接続、Metal ターミナルを実装。VT 処理には設計上の退避先である **SwiftTerm** を `TerminalEngine` 越しに使用し、libghostty-vt バイナリは不要。
 
-認証はパスワード、OpenSSH 形式の Ed25519 鍵（対応する暗号化鍵を含む）、暗号化されていない ECDSA PEM 鍵に対応。現在の SSH 依存ライブラリには keyboard-interactive の実装がなく、RSA も未対応のため、アプリでは選択できない。
+認証はパスワード、OpenSSH 形式の Ed25519 鍵（対応する暗号化鍵を含む）、暗号化されていない ECDSA PEM 鍵、接続済みの Tailscale アプリを利用する Tailscale SSH に対応。**Tailscale SSH** を選ぶと、パスワードや鍵を入力せず端末名で接続でき、サーバーが check mode の承認を要求した場合はサインイン用リンクを表示する。現在の SSH 依存ライブラリには keyboard-interactive の実装がなく、RSA も未対応のため、アプリでは選択できない。
 
 CoreText のグリフアトラス、Metal のインスタンス描画、24bit 色、キーボード操作・補助キー、選択・コピー・ペースト、scrollback、ダーク / ライトテーマを実装。Kitty の direct RGB / RGBA / PNG 転送には保存容量の上限を設けている。画像アニメーション、圧縮転送、相対配置、明示的な画像クロップは未対応。リサイズ時は通常の画像配置を破棄するが、Unicode placeholder の配置はテキストに追従して reflow 後も保持する。
+
+日本語と Starship / Nerd Font の記号に対応する UDEV Gothic NF を標準同梱。グリフを端末のセル幅に収め、アプリ復帰・再接続時もキーボードと補助キー行に合わせて表示領域を更新する。
 
 VT パースは現時点では `MainActor` 上で行う。専用 actor への移行、libghostty-vt バックエンド、Display P3 出力、実機での 120Hz・消費電力計測は今後の作業。バックグラウンド移行時に切断し、再接続は新しいシェルを開く。シェルの継続が必要な場合は接続先でマルチプレクサを利用する。
 

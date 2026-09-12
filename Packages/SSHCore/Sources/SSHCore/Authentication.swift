@@ -8,6 +8,11 @@ enum Authentication {
     static func factory(host: SSHHost, credential: SSHCredential) throws -> @Sendable () -> SSHAuthenticationMethod {
         let username = host.username
         switch host.authentication {
+        case .tailscale:
+            // Tailscale authenticates the connection's network identity. In SSH this is a
+            // "none" request, even though "none" is absent from the advertised methods.
+            // Construct a fresh delegate for each connection and never capture credentials.
+            return { .custom(TailscaleAuthenticationDelegate(username: username)) }
         case .password:
             guard let password = credential.password else { throw SSHSessionError.missingCredential }
             return { .passwordBased(username: username, password: password) }
@@ -36,6 +41,29 @@ enum Authentication {
             }
             throw SSHSessionError.unsupportedPrivateKey
         }
+    }
+
+    static func timeout(for authentication: SSHAuthentication) -> TimeAmount {
+        // Check mode can require a browser round trip. Keep the ordinary auth deadline intact.
+        .seconds(authentication == .tailscale ? 300 : 120)
+    }
+}
+
+/// Accessed only by the SSH channel's event loop, like Citadel's surrounding delegate.
+final class TailscaleAuthenticationDelegate: NIOSSHClientUserAuthenticationDelegate {
+    private let username: String
+    private var offered = false
+
+    init(username: String) { self.username = username }
+
+    func nextAuthenticationType(availableMethods: NIOSSHAvailableUserAuthenticationMethods,
+                                nextChallengePromise: EventLoopPromise<NIOSSHUserAuthenticationOffer?>) {
+        guard !offered else {
+            nextChallengePromise.succeed(nil)
+            return
+        }
+        offered = true
+        nextChallengePromise.succeed(.init(username: username, serviceName: "ssh-connection", offer: .none))
     }
 }
 

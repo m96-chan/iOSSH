@@ -10,7 +10,7 @@ let package = Package(
         .target(
             name: "TerminalRender",
             dependencies: ["TerminalCore"],
-            resources: [.copy("Shaders")]
+            resources: [.copy("Shaders"), .copy("Fonts")]
         )
     ]
 )
