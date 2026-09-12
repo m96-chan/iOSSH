@@ -123,6 +123,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
 
     func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {
         pendingRows.formUnion(rows.indices)
+        view.setNeedsDisplay()
     }
 
     func draw(in view: MTKView) {
@@ -138,7 +139,10 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         }
         let semaphore = inFlight
         command.addCompletedHandler { _ in semaphore.signal() }
-        encodeFrame(to: encoder, drawableSize: view.drawableSize)
+        // The acquired drawable can precede a resize of the view. Normalize
+        // against the texture being rendered, so glyph pixels keep their size.
+        encodeFrame(to: encoder, drawableSize: CGSize(width: drawable.texture.width,
+                                                     height: drawable.texture.height))
         encoder.endEncoding()
         command.present(drawable)
         command.commit()

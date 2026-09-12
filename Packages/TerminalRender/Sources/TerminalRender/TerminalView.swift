@@ -155,7 +155,12 @@ public final class TerminalMetalView: MTKView, UIKeyInput, @preconcurrency UIEdi
         enableSetNeedsDisplay = true
         framebufferOnly = true
         colorPixelFormat = .bgra8Unorm_srgb
-        autoResizeDrawable = true
+        // A paused view must resize and redraw even when the shell sends no new
+        // snapshot. Until that frame arrives, keep the previous pixels at their
+        // native scale instead of stretching them with keyboard animations.
+        autoResizeDrawable = false
+        contentMode = .redraw
+        layer.contentsGravity = .topLeft
         // Keep floating iPad keyboards from reducing the entire terminal viewport.
         keyboardLayoutGuide.followsUndockedKeyboard = false
         isMultipleTouchEnabled = true
@@ -252,13 +257,35 @@ public final class TerminalMetalView: MTKView, UIKeyInput, @preconcurrency UIEdi
 
     public override func layoutSubviews() {
         super.layoutSubviews()
+        synchronizeDrawableSize()
         errorLabel?.frame = bounds.insetBy(dx: 16, dy: 16)
         visibleViewport = TerminalViewportLayout.visibleBounds(
             in: bounds, safeAreaBottom: safeAreaInsets.bottom,
-            keyboardFrame: keyboardLayoutGuide.layoutFrame, accessoryFrame: accessoryFrameInTerminal()
+            keyboardFrame: keyboardFrameInTerminal(), accessoryFrame: accessoryFrameInTerminal()
         )
         updateInputProxyLayout()
         scheduleViewportPublication()
+    }
+
+    private func synchronizeDrawableSize() {
+        guard bounds.width > 0, bounds.height > 0 else { return }
+        let size = CGSize(width: max(1, (bounds.width * contentScaleFactor).rounded()),
+                          height: max(1, (bounds.height * contentScaleFactor).rounded()))
+        guard drawableSize != size else { return }
+        drawableSize = size
+        setNeedsDisplay()
+    }
+
+    private func keyboardFrameInTerminal() -> CGRect? {
+        if let window, let keyboardScreenFrame {
+            let inWindow = window.convert(keyboardScreenFrame, from: window.screen.coordinateSpace)
+            // On iPad the guide can retain the dismissed 52-point accessory even
+            // after the keyboard's reported end frame has moved offscreen. That
+            // stale rectangle must not shorten an otherwise restored terminal.
+            // A live hardware-keyboard accessory is accounted for separately.
+            guard !inWindow.intersection(window.bounds).isEmpty else { return nil }
+        }
+        return keyboardLayoutGuide.layoutFrame
     }
 
     private func updateInputProxyLayout() {
@@ -297,7 +324,10 @@ public final class TerminalMetalView: MTKView, UIKeyInput, @preconcurrency UIEdi
     }
 
     private func accessoryFrameInTerminal() -> CGRect? {
-        guard let terminalWindow = window, let accessoryWindow = accessory.window,
+        // UIKit may keep a dismissed accessory attached to its keyboard window.
+        // Its old frame no longer obscures this terminal after focus is released.
+        guard inputProxy.isFirstResponder,
+              let terminalWindow = window, let accessoryWindow = accessory.window,
               terminalWindow.screen === accessoryWindow.screen, !accessoryWindow.isHidden else { return nil }
         var ancestor: UIView? = accessory
         while let view = ancestor {
@@ -833,6 +863,7 @@ public final class TerminalMetalView: MTKView, UIKeyInput, @preconcurrency UIEdi
         for text in ["|", "~"] { _ = button(text) { [weak self] in self?.inputProxy.insertAccessoryText(text) } }
         let dismiss = button("⌄") { [weak self] in self?.resignFirstResponder() }
         dismiss.accessibilityLabel = "Hide keyboard"
+        dismiss.accessibilityIdentifier = "terminalDismissKeyboard"
         NSLayoutConstraint.activate([
             scroll.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 4),
             scroll.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -4),
