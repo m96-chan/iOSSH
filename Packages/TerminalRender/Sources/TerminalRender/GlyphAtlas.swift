@@ -76,6 +76,9 @@ final class GlyphAtlas {
         let bytesPerRow = pixelWidth * 4
         var pixels = [UInt8](repeating: 0, count: bytesPerRow * pixelHeight)
         let drew = pixels.withUnsafeMutableBytes { storage -> Bool in
+            if BlockGlyphRasterizer.draw(text, width: pixelWidth, height: pixelHeight, into: storage) {
+                return true
+            }
             guard let context = CGContext(data: storage.baseAddress, width: pixelWidth, height: pixelHeight,
                                           bitsPerComponent: 8, bytesPerRow: bytesPerRow,
                                           space: CGColorSpace(name: CGColorSpace.sRGB)!,
