@@ -22,6 +22,8 @@ test-ui:
 
 device-build:
 	@test -n "$(TEAM_ID)" || { echo "Set TEAM_ID to your Apple Developer team ID."; exit 1; }
+	# Recreate generated bundles so removed or updated fonts are reflected in the installed app.
+	rm -rf '$(DEVICE_DERIVED_DATA)/Build/Products/Debug-iphoneos/iOSSH.app' '$(DEVICE_DERIVED_DATA)/Build/Products/Debug-iphoneos/TerminalRender_TerminalRender.bundle'
 	xcodebuild -project iOSSH.xcodeproj -scheme iOSSH -configuration Debug -destination '$(if $(DEVICE_ID),id=$(DEVICE_ID),generic/platform=iOS)' -destination-timeout 30 -derivedDataPath '$(DEVICE_DERIVED_DATA)' $(XCODEBUILD_FLAGS) -allowProvisioningUpdates -allowProvisioningDeviceRegistration DEVELOPMENT_TEAM='$(TEAM_ID)' CODE_SIGN_STYLE=Automatic build
 
 device-install:

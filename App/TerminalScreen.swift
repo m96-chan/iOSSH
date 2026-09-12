@@ -8,6 +8,7 @@ struct TerminalScreen: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage("terminal.fontSize") private var fontSize: Double = 14
+    @AppStorage(TerminalFontLibrary.selectionKey) private var selectedFontName = TerminalFont.postScriptName
     @AppStorage("terminal.theme") private var themeName = "dark"
     @State private var model: ConnectionModel
     @State private var showingSettings = false
@@ -19,7 +20,7 @@ struct TerminalScreen: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                if model.phase != .connected {
+                if model.phase != .connected, model.phase != .checking {
                     HStack(spacing: 10) {
                         if model.phase == .connecting { ProgressView().controlSize(.small) }
                         VStack(alignment: .leading, spacing: 3) {
@@ -57,7 +58,10 @@ struct TerminalScreen: View {
                     .accessibilityIdentifier("authenticationBanner")
                 }
                 TerminalView(snapshot: model.snapshot,
-                             configuration: TerminalConfiguration(fontSize: fontSize, theme: theme),
+                             configuration: TerminalConfiguration(
+                                fontSize: fontSize,
+                                fontName: TerminalFontLibrary.shared.resolvedFontName(selectedFontName),
+                                theme: theme),
                              onInput: { model.send($0) },
                              onResize: { model.resize(columns: $0, rows: $1) },
                              onKey: { model.engine.sendKey($0) },
@@ -67,7 +71,7 @@ struct TerminalScreen: View {
                              onCopySelection: { model.engine.text(in: $0) })
                     .accessibilityIdentifier("terminal")
             }
-            .navigationTitle(model.host.name)
+            .navigationTitle(model.phase == .checking ? "Checking connection…" : model.host.name)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
@@ -79,7 +83,7 @@ struct TerminalScreen: View {
                     Menu {
                         Button("Appearance", systemImage: "textformat.size") { showingSettings = true }
                         Button("Scroll to Bottom", systemImage: "arrow.down.to.line") { model.engine.scrollToBottom() }
-                        if model.phase == .connected {
+                        if model.phase == .connected || model.phase == .checking {
                             Button("Disconnect", systemImage: "network.slash") { Task { await model.close() } }
                         } else if model.phase != .connecting, model.host.authentication != .tailscale {
                             Button("Enter Credentials", systemImage: "key") { Task { await model.connect(enterCredential: true) } }
@@ -102,9 +106,9 @@ struct TerminalScreen: View {
                     Text("First connection to \(challenge.hostname):\(challenge.port).\n\n\(challenge.algorithm)\n\(challenge.fingerprint)\n\nCompare this fingerprint with your server administrator before trusting it.")
                 }
             }
-            .task {
+            .onAppear {
                 model.apply(theme: theme)
-                await model.connect()
+                model.connectOnFirstAppearance()
             }
             .onChange(of: themeName) { _, _ in model.apply(theme: theme) }
             .onChange(of: model.phase) { _, phase in
@@ -112,10 +116,14 @@ struct TerminalScreen: View {
             }
             .onChange(of: scenePhase) { _, phase in
                 if phase == .background {
-                    Task { await model.close(message: "The app entered the background. Reconnect to open a new shell.") }
+                    model.enterBackground()
+                } else if phase == .active {
+                    model.enterForeground()
                 }
             }
-            .onDisappear { Task { await model.close() } }
+            // Sheets and screen lock must not tear down the shell. This full-screen view
+            // is dismissed through Close, which explicitly closes the model first.
+            .interactiveDismissDisabled()
         }
     }
 }

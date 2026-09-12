@@ -16,9 +16,9 @@ Implemented authentication: passwords, OpenSSH Ed25519 keys (including supported
 
 Rendering includes a CoreText glyph atlas, instanced Metal drawing, 24-bit colors, keyboard shortcuts and accessory keys, selection/copy/paste, scrollback, and dark/light themes. Kitty direct RGB/RGBA/PNG transfers have bounded storage. Graphics animation, compressed transfers, relative placements, and explicit source cropping remain unsupported. Ordinary image placements are cleared on resize; Unicode placeholder placements follow the text and survive reflow.
 
-The bundled UDEV Gothic NF font provides Japanese and Starship/Nerd Font symbols by default. Glyphs fit the terminal's cell widths, and the visible grid is updated around the keyboard and accessory row when returning to the app or reconnecting.
+The bundled HackGen Console NF font provides Japanese and Starship/Nerd Font symbols by default. Settings can import additional monospaced TTF/OTF fonts from Files for use inside iOSSH. Glyphs fit the terminal's cell widths, and the visible grid is updated around the keyboard and accessory row when returning to the app or reconnecting. Japanese input uses UIKit composition and sends text only after confirmation.
 
-VT parsing currently runs on `MainActor`. Dedicated parsing isolation, the libghostty-vt backend, Display P3 output, and physical-device 120Hz/power measurements remain follow-up work. Backgrounding closes the connection; reconnect opens a new shell. Use a remote multiplexer when shell continuity is needed.
+VT parsing currently runs on `MainActor`. Dedicated parsing isolation, the libghostty-vt backend, Display P3 output, and physical-device 120Hz/power measurements remain follow-up work. Screen lock and backgrounding retain the current SSH session and terminal contents. Returning checks the existing connection and resumes the same shell when it is alive; reconnecting after connection loss opens a new shell. Use a remote multiplexer when shell continuity across connection loss is needed.
 
 See [development and validation notes](docs/DEVELOPMENT.md) for build commands, key formats, and test coverage.
 
@@ -50,7 +50,7 @@ Targets **both iPhone and iPad**, running **iOS 17+** (with Metal 3 and Swift 6 
 - Hardware keyboard support (iPad / Magic Keyboard)
 - An accessory key bar above the software keyboard (Ctrl / Esc / Tab / arrows / `|` / `~`)
 - Copy and paste, text selection
-- Font size and color theme settings
+- Font selection/import, font size, and color theme settings
 - Disconnection detection and reconnection
 
 ### Excluded from v1 (deliberately)
@@ -240,7 +240,7 @@ Define what counts as working before implementation begins.
 | Risk | Impact | Mitigation |
 | --- | --- | --- |
 | **libghostty-vt's API is unstable** (development assumes breaking changes) | May require rewrites of the engine layer | Isolate it behind the `TerminalEngine` protocol and keep the option to fall back to SwiftTerm. Pin the version and choose when to adopt updates |
-| **iOS background execution limits** | Suspension drops SSH connections | Accept that connections cannot stay up indefinitely and handle this through the **reconnection flow** (alongside the decision to exclude mosh) |
+| **iOS background execution limits** | Suspension can interrupt networking or allow server timeouts | Retain and check the existing session on return; offer reconnection after connection loss. Indefinite background connectivity is not guaranteed |
 | **Citadel's feature coverage is unverified** | PTY / window-change / ed25519 and ECDSA keys / keyboard-interactive support may be incomplete | Validate with a PoC before implementation. Fill any gaps at the swift-nio-ssh layer |
 | **Integrating Zig cross-compilation into CI** | Build reproducibility | Standardize XCFramework generation through `make` and attach artifacts to releases |
 | **Memory pressure from Kitty Graphics** | Repeated large images may trigger memory warnings | Add limits and eviction to `ImageStore` |

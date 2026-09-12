@@ -36,7 +36,7 @@ Use the hardware UDID shown by Xcode's Devices and Simulators window for `DEVICE
 
 For an already-built app, `make device-install DEVICE_ID=YOUR_DEVICE_UDID` only installs it. If the device is temporarily unavailable, omit `DEVICE_ID` from `device-build` to build for generic iOS; the signing profile must still include the device before installation. [Free Personal Team profiles expire after seven days](https://developer.apple.com/support/compare-memberships/); rebuild and reinstall after expiration. For breakpoints and interactive logs, select the same team and device in Xcode and run the iOSSH scheme with the Debug configuration.
 
-Start physical testing by adding a server you control, checking its host-key fingerprint, and opening a shell. Check typing, rotation, copy/paste, saved-credential biometrics, and reconnection after returning from the background. Local-network connections may trigger the iOS network permission prompt.
+Start physical testing by adding a server you control, checking its host-key fingerprint, and opening a shell. Check Japanese conversion/confirmation, rotation, copy/paste, saved-credential biometrics, and resuming the same shell after screen lock. Local-network connections may trigger the iOS network permission prompt.
 
 If installation succeeds but iOS refuses to launch an untrusted developer app, open Settings > General > VPN & Device Management on the device and trust the certificate for the Apple Account used to sign this build. Follow any confirmation or restart prompts. Apple documents this [Personal Team setup](https://developer.apple.com/documentation/swiftui/food-truck-building-a-swiftui-multiplatform-app) for its sample apps as well.
 
@@ -46,7 +46,7 @@ Add a hostname/IP address, SSH port, username, and authentication method. For pa
 
 For **Tailscale SSH**, connect the Tailscale iOS app first, enter the server's MagicDNS device name (or full `.ts.net` name/Tailscale IP), port 22, and the server's username, then choose **Tailscale SSH** in Authentication. The server must have Tailscale SSH enabled and allow access through the tailnet SSH policy. This mode uses SSH `none` authentication and does not load, save, or ask for credentials. Existing password/key hosts retain their selected method; edit a host to change it. Name resolution uses the system resolver and the connected Tailscale app. See [Tailscale SSH](https://tailscale.com/docs/features/tailscale-ssh) and [MagicDNS](https://tailscale.com/docs/features/magicdns).
 
-Check-mode approval messages appear while connecting. Tap the Tailscale HTTPS sign-in button to complete approval in the in-app Safari sheet. SSH authentication waits up to five minutes in this mode. Links are never opened automatically, and first-use/changed host-key checks still apply. Switching to an external browser can background the app and close SSH; reconnect after approval in that case.
+Check-mode approval messages appear while connecting. Tap the Tailscale HTTPS sign-in button to complete approval in the in-app Safari sheet. SSH authentication waits up to five minutes in this mode. Links are never opened automatically, and first-use/changed host-key checks still apply. Pending authentication is retained when the app backgrounds; if the network connection or authentication deadline expires while approving, reconnect afterward.
 
 Saved secrets use Keychain with `WhenPasscodeSetThisDeviceOnly` and `biometryCurrentSet`, never SwiftData or UserDefaults. Enroll Face ID/Touch ID and set a device passcode before saving secrets. The app does not weaken storage protection when biometrics are unavailable; enter the credential per connection instead. Changing enrolled biometrics can invalidate existing saved credentials.
 
@@ -58,13 +58,17 @@ Supported keys:
 
 First use shows the server's SHA-256 host-key fingerprint. Compare it through a trusted channel before accepting. Known keys persist in Application Support; a changed key blocks the connection. Deleting a host entry does not erase its trust record. There is no in-app host-key reset yet.
 
-Reconnect opens a fresh authenticated shell, including host-key verification. It cannot recover a shell that the server ended. The app closes SSH when backgrounded and offers reconnection on return.
+Screen lock and backgrounding retain the SSH session, terminal buffer, and cursor. Returning checks the existing connection and reapplies its current terminal size without authenticating again or opening another shell. Explicit Close/Disconnect still closes the connection. If the peer has closed or no longer responds, the app offers Reconnect; that opens a fresh authenticated shell with host-key verification and cannot recover a shell the server ended. iOS can suspend the app, so retaining a session does not guarantee indefinite background networking. See [Apple's background execution guidance](https://developer.apple.com/documentation/uikit/extending-your-app-s-background-execution-time).
 
 ## Terminal
 
 Tap the terminal to show the keyboard. The accessory row includes Ctrl, Esc, Tab, arrows, pipe, and tilde. Hardware modifiers, application cursor keys, and bracketed paste are handled. Swipe vertically for history. Long press and drag to select; use the edit menu or Command-C/Command-V to copy/paste. Settings change the font size and dark/light palette.
 
-The default font is bundled **UDEV Gothic NF** in regular, bold, italic, and bold italic styles, with Japanese and Nerd Font symbols for Starship. Latin and Japanese advances use a 1:2 ratio. Oversized symbol ink is fitted within the cell span reported by the terminal parser; Powerline separators meet the cell edges. Settings previews the same font and includes its licenses. Server-side prompt width settings must still match the terminal's Unicode widths.
+The default font is bundled **HackGen Console NF**, with Japanese and Nerd Font symbols for Starship. Latin and Japanese advances use a 1:2 ratio. Oversized symbol ink is fitted within the cell span reported by the terminal parser; Powerline separators meet the cell edges. Settings previews the selected font and includes the bundled font licenses. Server-side prompt width settings must still match the terminal's Unicode widths.
+
+Settings can import monospaced `.ttf` and `.otf` files from Files. Imports are copied into iOSSH's Application Support directory and registered for this app, not installed system-wide. The selected font is restored on launch; removing an imported selection returns to the bundled default.
+
+Japanese composition is handled by a native UIKit text input at the terminal cursor. Marked text and candidate edits remain local until confirmed; deleting or canceling a composition does not erase text already sent to the server.
 
 The last terminal row stays above the opaque accessory row. Layout is recalculated from current keyboard/accessory geometry after keyboard changes, foregrounding, and reconnection, and the resulting rows/columns are sent to the PTY.
 
@@ -94,11 +98,11 @@ On 2026-09-12, with Xcode 26.5 / Swift 6.3.2:
 
 - iOS Simulator app build succeeded (iPhone and iPad target families).
 - A Personal Team signed Debug build passed signature validation, installed, and launched on iPhone 17e / iOS 26.6.1 after trusting the developer certificate. The user confirmed a successful connection to a Tailscale SSH server with the initial build.
-- Version 0.1.0 build 2 was signed with all four bundled fonts verified in the app and installed on the same iPhone over Wi-Fi. The user's Starship theme and Tailscale check-mode flow still need physical-device confirmation with this update.
-- SSHCore: 20 unit/protocol tests passed, including Tailscale authentication and bounded authentication banners. The optional real OpenSSH test passed during initial validation and was skipped for this update.
+- Version 0.1.0 build 3 passed signature, Personal Team profile, and bundled HackGen Regular/Bold checksum checks, then installed on the same iPhone over Wi-Fi. Launch verification was blocked by the device screen lock. The user's Starship theme, Japanese input, screen-lock session resumption, and Tailscale check-mode flow still need physical-device confirmation with this update.
+- SSHCore: 24 unit/protocol tests passed, including Tailscale authentication, bounded authentication banners, and retained-connection probes (peer acknowledgement, refusal, timeout, and cancellation). The optional real OpenSSH test passed during initial validation and was skipped for this update.
 - TerminalCore: 18 tests / 19 parameterized cases passed.
-- App/renderer: 21 tests / 22 parameterized cases passed on iPhone 17 / iOS 26.5 Simulator, covering connection lifecycle, Tailscale sign-in, font coverage/rasterization, and keyboard viewport geometry.
-- UI: 4 tests passed on iPhone 17, including keyboard display, foreground return, reconnect, and rotation; its final landscape screenshot was inspected. Initial terminal startup/cancellation also passed on iPad Pro 11-inch (M5) / iOS 26.5 Simulator.
+- App/renderer: 48 tests passed on iPhone 17 / iOS 26.5 Simulator, covering retained-session lifecycle, Tailscale sign-in, HackGen coverage/rasterization, font import/removal/reimport, native Japanese composition, and keyboard viewport geometry.
+- UI: 5 tests passed on iPhone 17 across the full run and focused reruns, including keyboard display, foreground return, reconnect, rotation, and real Japanese Kana candidate selection/confirmation. The local preedit and native candidate-bar screenshot was inspected. Initial terminal startup/cancellation also passed on iPad Pro 11-inch (M5) / iOS 26.5 Simulator.
 - The standalone Metal GPU rendering/blending check passed; terminal and iPad startup screenshots were inspected.
 
 ## Remaining acceptance work

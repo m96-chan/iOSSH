@@ -2,11 +2,12 @@
 
 - Source fonts are licensed under SIL OPEN FONT LICENSE Version 1.1.
   For more information, see "LICENSE_<FontName>" file contained in the "source" directory.
-- "UDEV Gothic" are licensed under SIL OPEN FONT LICENSE Version 1.1.
+- "白源/HackGen" are licensed under SIL OPEN FONT LICENSE Version 1.1.
+- Other source code, such as generating scripts, will use the MIT license.
 
-## "UDEV Gothic" licensing
+## "白源/HackGen" licensing
 
-Copyright (c) 2022 Yuko OTAWARA. with Reserved Font Name "UDEV Gothic"
+Copyright (c) 2019, Yuko OTAWARA. with Reserved Font Name "白源", "HackGen"
 
 This Font Software is licensed under the SIL Open Font License, Version 1.1.
 This license is copied below, and is also available with a FAQ at:
@@ -99,3 +100,25 @@ INCLUDING ANY GENERAL, SPECIAL, INDIRECT, INCIDENTAL, OR CONSEQUENTIAL
 DAMAGES, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
 FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
 OTHER DEALINGS IN THE FONT SOFTWARE.
+
+## Other source licensing (MIT)
+
+Copyright (c) 2019 Yuko OTAWARA
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.

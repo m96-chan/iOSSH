@@ -96,6 +96,7 @@ public final class TerminalMetalView: MTKView, UIKeyInput, @preconcurrency UIEdi
     private lazy var accessory = makeAccessory()
     private weak var controlButton: UIButton?
     private var errorLabel: UILabel?
+    let inputProxy = TerminalTextInputView()
 
     public init(configuration: TerminalConfiguration = .init()) {
         self.terminalConfiguration = configuration
@@ -120,6 +121,17 @@ public final class TerminalMetalView: MTKView, UIKeyInput, @preconcurrency UIEdi
                 delegate = renderer
             } catch { showError("Terminal rendering could not start: \(error.localizedDescription)") }
         } else { showError("Metal is unavailable on this device.") }
+        addSubview(inputProxy)
+        inputProxy.inputAccessoryView = accessory
+        inputProxy.onCommit = { [weak self] in self?.sendCommittedText($0) }
+        inputProxy.onRemoteDelete = { [weak self] in self?.send(.backspace) }
+        inputProxy.onCompositionChange = { [weak self] in self?.updateInputProxyLayout() }
+        inputProxy.onResponderChange = { [weak self] in self?.requestViewportRefresh() }
+        inputProxy.onHardwarePress = { [weak self] in self?.handleHardwarePress($0) ?? false }
+        inputProxy.onTerminalCopy = { [weak self] in self?.copy(nil) }
+        inputProxy.onTerminalPaste = { [weak self] in self?.paste(nil) }
+        inputProxy.onTerminalSelectAll = { [weak self] in self?.selectAll(nil) }
+        inputProxy.terminalCanCopy = { [weak self] in self?.selectedRange != nil }
         addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(tapped)))
         addGestureRecognizer(UILongPressGestureRecognizer(target: self, action: #selector(selectText(_:))))
         addGestureRecognizer(UIPanGestureRecognizer(target: self, action: #selector(scrollHistory(_:))))
@@ -138,7 +150,10 @@ public final class TerminalMetalView: MTKView, UIKeyInput, @preconcurrency UIEdi
     public override var canBecomeFirstResponder: Bool { true }
     public override var inputAccessoryView: UIView? { accessory }
     public override var accessibilityValue: String? {
-        get { snapshot.map(visibleText) }
+        get {
+            let visible = snapshot.map(visibleText) ?? ""
+            return inputProxy.hasComposition ? visible + "\n" + (inputProxy.text ?? "") : visible
+        }
         set { }
     }
     public override var accessibilityFrame: CGRect {
@@ -147,13 +162,13 @@ public final class TerminalMetalView: MTKView, UIKeyInput, @preconcurrency UIEdi
     }
 
     @discardableResult public override func becomeFirstResponder() -> Bool {
-        let result = super.becomeFirstResponder()
+        let result = inputProxy.becomeFirstResponder()
         requestViewportRefresh()
         return result
     }
 
     @discardableResult public override func resignFirstResponder() -> Bool {
-        let result = super.resignFirstResponder()
+        let result = inputProxy.resignFirstResponder()
         requestViewportRefresh()
         return result
     }
@@ -183,7 +198,30 @@ public final class TerminalMetalView: MTKView, UIKeyInput, @preconcurrency UIEdi
             in: bounds, safeAreaBottom: safeAreaInsets.bottom,
             keyboardFrame: keyboardLayoutGuide.layoutFrame, accessoryFrame: accessoryFrameInTerminal()
         )
+        updateInputProxyLayout()
         scheduleViewportPublication()
+    }
+
+    private func updateInputProxyLayout() {
+        guard let cell = renderer?.cellSize, visibleViewport.width > 0, visibleViewport.height > 0 else { return }
+        let composing = inputProxy.hasComposition
+        let font = TerminalFont.font(named: terminalConfiguration.fontName, size: terminalConfiguration.fontSize)
+        if inputProxy.font != font { inputProxy.font = font }
+        inputProxy.textColor = composing ? terminalConfiguration.theme.foreground.terminalUIColor : .clear
+        inputProxy.backgroundColor = composing ? terminalConfiguration.theme.background.terminalUIColor : .clear
+        inputProxy.tintColor = composing ? terminalConfiguration.theme.cursor.terminalUIColor : .clear
+        inputProxy.markedTextStyle = [.underlineStyle: NSUnderlineStyle.single.rawValue,
+                                     .foregroundColor: terminalConfiguration.theme.foreground.terminalUIColor]
+        let column = max(0, snapshot?.cursor.column ?? 0)
+        let row = max(0, snapshot?.cursor.row ?? 0)
+        let cursor = CGRect(x: CGFloat(column) * cell.width, y: CGFloat(row) * cell.height,
+                            width: cell.width, height: cell.height)
+        let textWidth = ((inputProxy.text ?? "") as NSString).size(withAttributes: [.font: font]).width
+        let width = min(visibleViewport.width, max(cell.width * 2, ceil(textWidth) + cell.width))
+        let fitting = inputProxy.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude))
+        let frame = TerminalTextInputLayout.frame(cursor: cursor, viewport: visibleViewport,
+                                                  preferredSize: CGSize(width: width, height: ceil(fitting.height)))
+        if inputProxy.frame != frame { inputProxy.frame = frame }
     }
 
     private func accessoryFrameInTerminal() -> CGRect? {
@@ -245,9 +283,11 @@ public final class TerminalMetalView: MTKView, UIKeyInput, @preconcurrency UIEdi
         let color = configuration.theme.background.linearColor
         clearColor = MTLClearColor(red: Double(color.x), green: Double(color.y), blue: Double(color.z), alpha: 1)
         keyboardAppearance = configuration.theme.background < 0x808080 ? .dark : .light
+        inputProxy.keyboardAppearance = keyboardAppearance
+        updateInputProxyLayout()
         if changed {
             restartCursorTimer()
-            reloadInputViews()
+            inputProxy.reloadInputViews()
             setNeedsLayout()
             setNeedsDisplay()
         }
@@ -262,6 +302,7 @@ public final class TerminalMetalView: MTKView, UIKeyInput, @preconcurrency UIEdi
         let cursorChanged = snapshot?.cursor != value?.cursor
         snapshot = value
         renderer?.update(value)
+        updateInputProxyLayout()
         if let value {
             let color = value.defaultBackground.linearColor
             clearColor = MTLClearColor(red: Double(color.x), green: Double(color.y), blue: Double(color.z), alpha: 1)
@@ -272,12 +313,17 @@ public final class TerminalMetalView: MTKView, UIKeyInput, @preconcurrency UIEdi
     }
 
     public func stop() {
+        inputProxy.cancelComposition()
         cursorTimer?.invalidate()
         cursorTimer = nil
         renderer?.isActive = false
     }
 
     public func insertText(_ text: String) {
+        inputProxy.insertText(text)
+    }
+
+    private func sendCommittedText(_ text: String) {
         clearSelection()
         if text == "\n" { send(.enter); return }
         if controlPressed {
@@ -288,28 +334,34 @@ public final class TerminalMetalView: MTKView, UIKeyInput, @preconcurrency UIEdi
         onInput?(Data(text.utf8))
     }
 
-    public func deleteBackward() { send(.backspace) }
+    public func deleteBackward() { inputProxy.deleteBackward() }
 
     public override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        if inputProxy.hasComposition { super.pressesBegan(presses, with: event); return }
         var unhandled = Set<UIPress>()
         for press in presses {
-            guard let key = press.key else { unhandled.insert(press); continue }
-            let modifiers = key.modifierFlags
-            if modifiers.contains(.command) { unhandled.insert(press); continue }
-            if let terminalKey = terminalKey(for: key.keyCode) {
-                send(terminalKey, modifiers: modifiers)
-            } else if let sequence = functionSequence(for: key.keyCode, modifiers: modifiers) {
-                clearSelection()
-                onInput?(Data(sequence.utf8))
-            } else if modifiers.contains(.control), let data = controlBytes(key.charactersIgnoringModifiers) {
-                clearSelection()
-                onInput?(modifiers.contains(.alternate) ? Data([0x1B]) + data : data)
-            } else if modifiers.contains(.alternate), !key.charactersIgnoringModifiers.isEmpty {
-                clearSelection()
-                onInput?(Data(("\u{1B}" + key.charactersIgnoringModifiers).utf8))
-            } else { unhandled.insert(press) }
+            if !handleHardwarePress(press) { unhandled.insert(press) }
         }
         if !unhandled.isEmpty { super.pressesBegan(unhandled, with: event) }
+    }
+
+    private func handleHardwarePress(_ press: UIPress) -> Bool {
+        guard let key = press.key else { return false }
+        let modifiers = key.modifierFlags
+        if modifiers.contains(.command) { return false }
+        if let terminalKey = terminalKey(for: key.keyCode) {
+            send(terminalKey, modifiers: modifiers)
+        } else if let sequence = functionSequence(for: key.keyCode, modifiers: modifiers) {
+            clearSelection()
+            onInput?(Data(sequence.utf8))
+        } else if modifiers.contains(.control), let data = controlBytes(key.charactersIgnoringModifiers) {
+            clearSelection()
+            onInput?(modifiers.contains(.alternate) ? Data([0x1B]) + data : data)
+        } else if modifiers.contains(.alternate), !key.charactersIgnoringModifiers.isEmpty {
+            clearSelection()
+            onInput?(Data(("\u{1B}" + key.charactersIgnoringModifiers).utf8))
+        } else { return false }
+        return true
     }
 
     public override var keyCommands: [UIKeyCommand]? {
@@ -354,6 +406,7 @@ public final class TerminalMetalView: MTKView, UIKeyInput, @preconcurrency UIEdi
 
     public override func paste(_ sender: Any?) {
         guard let text = UIPasteboard.general.string else { return }
+        inputProxy.commitComposition()
         clearSelection()
         if let onPaste { onPaste(text) }
         else {
@@ -384,6 +437,7 @@ public final class TerminalMetalView: MTKView, UIKeyInput, @preconcurrency UIEdi
     }
 
     private func send(_ key: TerminalKey, modifiers: UIKeyModifierFlags = []) {
+        if inputProxy.consumeTerminalKey(key) { return }
         clearSelection()
         var significant = modifiers.intersection([.shift, .control, .alternate])
         if controlPressed {
@@ -463,6 +517,7 @@ public final class TerminalMetalView: MTKView, UIKeyInput, @preconcurrency UIEdi
     @objc private func tapped() { clearSelection(); becomeFirstResponder() }
 
     @objc private func selectText(_ gesture: UILongPressGestureRecognizer) {
+        guard !inputProxy.hasComposition else { return }
         guard let snapshot, snapshot.columns > 0, snapshot.rows > 0, let size = renderer?.cellSize else { return }
         let point = gesture.location(in: self)
         let column = min(snapshot.columns - 1, max(0, Int(point.x / size.width)))
@@ -480,6 +535,7 @@ public final class TerminalMetalView: MTKView, UIKeyInput, @preconcurrency UIEdi
     }
 
     @objc private func scrollHistory(_ gesture: UIPanGestureRecognizer) {
+        guard !inputProxy.hasComposition else { return }
         guard let height = renderer?.cellSize.height, height > 0, let onScroll else { return }
         if gesture.state == .began { panRemainder = 0; clearSelection() }
         let amount = gesture.translation(in: self).y + panRemainder
@@ -572,6 +628,7 @@ public final class TerminalMetalView: MTKView, UIKeyInput, @preconcurrency UIEdi
         }
         let control = button("Ctrl") { [weak self] in
             guard let self else { return }
+            self.inputProxy.cancelComposition()
             self.controlPressed.toggle()
             self.controlButton?.isSelected = self.controlPressed
         }
@@ -580,7 +637,7 @@ public final class TerminalMetalView: MTKView, UIKeyInput, @preconcurrency UIEdi
         controlButton = control
         let keys: [(String, TerminalKey)] = [("Esc", .escape), ("Tab", .tab), ("←", .left), ("↓", .down), ("↑", .up), ("→", .right)]
         for (title, key) in keys { _ = button(title) { [weak self] in self?.send(key) } }
-        for text in ["|", "~"] { _ = button(text) { [weak self] in self?.insertText(text) } }
+        for text in ["|", "~"] { _ = button(text) { [weak self] in self?.inputProxy.insertAccessoryText(text) } }
         let dismiss = button("⌄") { [weak self] in self?.resignFirstResponder() }
         dismiss.accessibilityLabel = "Hide keyboard"
         NSLayoutConstraint.activate([

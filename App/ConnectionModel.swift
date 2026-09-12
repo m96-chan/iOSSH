@@ -14,6 +14,7 @@ protocol ConnectionTransport: AnyObject {
                  confirmHostKey: @escaping @Sendable (HostKeyChallenge) async -> Bool) async throws
     func write(_ data: Data) async throws
     func resize(columns: Int, rows: Int) async throws
+    func checkConnection() async throws
     func disconnect() async
 }
 
@@ -33,7 +34,7 @@ final class ConnectionModel {
         )
     }
 
-    enum Phase: String { case idle, connecting, connected, disconnected, failed }
+    enum Phase: String { case idle, connecting, connected, checking, disconnected, failed }
     struct TrustPrompt: Identifiable {
         let id = UUID()
         let challenge: HostKeyChallenge
@@ -61,6 +62,11 @@ final class ConnectionModel {
     @ObservationIgnored private var writerTask: Task<Void, Never>?
     @ObservationIgnored private var input: AsyncStream<Data>.Continuation?
     @ObservationIgnored private var attempt = UUID()
+    @ObservationIgnored private var initialConnectionTask: Task<Void, Never>?
+    @ObservationIgnored private var foregroundCheck: Task<Void, Never>?
+    @ObservationIgnored private var foregroundCheckID = UUID()
+    @ObservationIgnored private var isInBackground = false
+    @ObservationIgnored private var needsConnectionCheck = false
 
     init(host: SSHHost, dependencies: Dependencies = .live) {
         self.host = host
@@ -71,10 +77,17 @@ final class ConnectionModel {
         snapshot = engine.snapshot()
     }
 
+    /// Owned by the model so presenting a sheet cannot cancel pending authentication.
+    func connectOnFirstAppearance() {
+        guard phase == .idle, initialConnectionTask == nil else { return }
+        initialConnectionTask = Task { [weak self] in await self?.connect() }
+    }
+
     func connect(enterCredential: Bool = false) async {
-        guard phase != .connecting, phase != .connected else { return }
+        guard phase != .connecting, phase != .connected, phase != .checking else { return }
         let token = UUID()
         attempt = token
+        needsConnectionCheck = false
         phase = .connecting
         message = nil
         authenticationBanner = ""
@@ -114,6 +127,7 @@ final class ConnectionModel {
             }
             transport.onDisconnect = { [weak self] reason in
                 guard let self, self.attempt == token else { return }
+                self.cancelForegroundCheck()
                 self.phase = .disconnected
                 self.message = reason ?? "The remote session ended."
                 self.authenticationBanner = ""
@@ -144,6 +158,7 @@ final class ConnectionModel {
             phase = .connected
             authenticationBanner = ""
             authenticationURL = nil
+            if !isInBackground, needsConnectionCheck { enterForeground() }
         } catch {
             guard attempt == token else { return }
             answerTrust(false)
@@ -159,6 +174,10 @@ final class ConnectionModel {
 
     func close(message: String? = nil) async {
         attempt = UUID()
+        initialConnectionTask?.cancel()
+        initialConnectionTask = nil
+        cancelForegroundCheck()
+        needsConnectionCheck = false
         answerCredential(nil)
         answerTrust(false)
         input?.finish()
@@ -174,6 +193,71 @@ final class ConnectionModel {
         await oldSession?.disconnect()
     }
 
+    func enterBackground() {
+        isInBackground = true
+        needsConnectionCheck = true
+        cancelForegroundCheck()
+        // Keep the shell, terminal engine, credentials, and any pending trust/authentication.
+        // iOS may suspend this process; no background execution entitlement is needed.
+    }
+
+    func enterForeground() {
+        isInBackground = false
+        guard phase == .connected || phase == .checking else { return }
+        guard foregroundCheck == nil else { return }
+        guard needsConnectionCheck, let transport = session else { return }
+        needsConnectionCheck = false
+        let token = attempt
+        let checkID = UUID()
+        foregroundCheckID = checkID
+        phase = .checking
+        let task = Task<Void, Never> { [weak self] in
+            await self?.checkRetainedConnection(transport, token: token, checkID: checkID)
+        }
+        foregroundCheck = task
+    }
+
+    private func checkRetainedConnection(_ transport: any ConnectionTransport, token: UUID, checkID: UUID) async {
+        defer { if foregroundCheckID == checkID { foregroundCheck = nil } }
+        guard isCurrentForegroundCheck(token: token, checkID: checkID) else { return }
+        do {
+            guard transport.isConnected else { throw SSHSessionError.disconnected }
+            try await transport.checkConnection()
+            guard isCurrentForegroundCheck(token: token, checkID: checkID) else { return }
+            // Changes while locked/checking are sent to the existing PTY, never a new shell.
+            while true {
+                guard transport.isConnected else { throw SSHSessionError.disconnected }
+                let columns = engine.columns
+                let rows = engine.rows
+                try await transport.resize(columns: columns, rows: rows)
+                guard isCurrentForegroundCheck(token: token, checkID: checkID) else { return }
+                if columns == engine.columns, rows == engine.rows { break }
+            }
+            guard transport.isConnected else { throw SSHSessionError.disconnected }
+            phase = .connected
+            snapshot = engine.snapshot()
+        } catch is CancellationError {
+            // Another background transition or explicit close owns the current state.
+        } catch {
+            guard isCurrentForegroundCheck(token: token, checkID: checkID) else { return }
+            let reason = error as? SSHSessionError == .connectionTimedOut
+                ? "The existing SSH session did not respond for 30 seconds. Reconnect to open a new shell."
+                : "The existing SSH session closed. Reconnect to open a new shell."
+            await close(message: reason)
+        }
+    }
+
+    private func isCurrentForegroundCheck(token: UUID, checkID: UUID) -> Bool {
+        attempt == token && foregroundCheckID == checkID && !isInBackground
+            && phase == .checking && !Task.isCancelled
+    }
+
+    private func cancelForegroundCheck() {
+        foregroundCheckID = UUID()
+        foregroundCheck?.cancel()
+        foregroundCheck = nil
+    }
+
     func send(_ data: Data) {
         guard !data.isEmpty, session?.isConnected == true, let input else { return }
         if case .dropped = input.yield(data) {
@@ -184,7 +268,7 @@ final class ConnectionModel {
     func resize(columns: Int, rows: Int) {
         guard engine.columns != columns || engine.rows != rows else { return }
         engine.resize(columns: columns, rows: rows)
-        if phase == .connected, let transport = session {
+        if phase == .connected, !isInBackground, let transport = session {
             let token = attempt
             Task {
                 guard attempt == token else { return }

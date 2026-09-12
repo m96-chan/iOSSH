@@ -10,9 +10,10 @@ struct TerminalFontTests {
     @Test
     func bundledStylesCoverJapaneseAndStarshipWithoutFontFallback() {
         for (bold, italic, style) in [(false, false, "Regular"), (true, false, "Bold"),
-                                      (false, true, "Italic"), (true, true, "BoldItalic")] {
+                                      (false, true, "Regular"), (true, true, "Bold")] {
             let font = TerminalFont.font(ofSize: 14, bold: bold, italic: italic)
-            #expect(font.fontName == "UDEVGothicNF-\(style)")
+            #expect(font.fontName == "HackGenConsoleNF-\(style)")
+            if italic { #expect(CTFontGetMatrix(font as CTFont).c > 0) }
             for text in ["日本語", "e\u{301}", "❯", "\u{e0a0}", "\u{e0b0}", "\u{f120}", "\u{f17c}", "\u{f121}", "\u{f015}", "\u{f07b}", "\u{f0318}"] {
                 let line = CTLineCreateWithAttributedString(NSAttributedString(string: text, attributes: [.font: font]))
                 for run in CTLineGetGlyphRuns(line) as! [CTRun] {
@@ -27,6 +28,15 @@ struct TerminalFontTests {
             let japanese = ("日本語" as NSString).size(withAttributes: [.font: font]).width
             #expect(abs(japanese - advance * 6) < 0.01)
         }
+    }
+
+    @Test
+    func synthesizedItalicChangesTheActualGlyphSlant() throws {
+        let atlas = try atlas()
+        let upright = try pixels(atlas, text: "H", width: 1)
+        let italic = try pixels(atlas, text: "H", width: 1, italic: true)
+        #expect(abs(try upright.slant()) < 0.75)
+        #expect(abs(try italic.slant()) > 1.5)
     }
 
     @Test
@@ -101,6 +111,24 @@ struct TerminalFontTests {
 
         func alpha(x: Int, y: Int) -> UInt8 { bytes[(y * width + x) * 4 + 3] }
 
+        func slant() throws -> Double {
+            let bounds = try #require(inkBounds)
+            let first = Int(bounds.minY), last = Int(bounds.maxY) - 1
+            let band = max(1, Int(bounds.height) / 4)
+            func centroid(_ rows: Range<Int>) -> Double {
+                var mass = 0.0, weightedX = 0.0
+                for y in rows {
+                    for x in 0..<width {
+                        let value = Double(alpha(x: x, y: y))
+                        mass += value
+                        weightedX += Double(x) * value
+                    }
+                }
+                return weightedX / max(1, mass)
+            }
+            return centroid(first..<(first + band)) - centroid((last - band + 1)..<(last + 1))
+        }
+
         var inkBounds: CGRect? {
             var minX = width, minY = height, maxX = -1, maxY = -1
             for y in 0..<height {
@@ -114,8 +142,8 @@ struct TerminalFontTests {
         }
     }
 
-    private func pixels(_ atlas: GlyphAtlas, text: String, width: Int) throws -> Pixels {
-        let glyph = try #require(atlas.glyph(text: text, width: width, bold: false, italic: false))
+    private func pixels(_ atlas: GlyphAtlas, text: String, width: Int, italic: Bool = false) throws -> Pixels {
+        let glyph = try #require(atlas.glyph(text: text, width: width, bold: false, italic: italic))
         let texture = atlas.textures[glyph.page]
         let pixelWidth = Int(glyph.size.x), pixelHeight = Int(glyph.size.y)
         let region = MTLRegionMake2D(Int((glyph.uv.x * Float(texture.width)).rounded()),

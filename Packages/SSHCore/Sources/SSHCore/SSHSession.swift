@@ -21,6 +21,7 @@ public final class SSHSession {
     private var generation = UUID()
     private var connecting = false
     private var connectionLifetime: SSHConnectionLifetime?
+    private var pendingProbe: EventLoopFuture<Void>?
 
     public init(knownHosts: KnownHostsStore) { self.knownHosts = knownHosts }
 
@@ -179,9 +180,34 @@ public final class SSHSession {
             terminalPixelWidth: 0, terminalPixelHeight: 0))
     }
 
+    /// Checks the retained SSH transport on foreground return without creating a new shell.
+    /// Cancellation stops this check, not the connection; explicit disconnect remains separate.
+    public func checkConnection() async throws {
+        guard isConnected, let transport, let shell else { throw SSHSessionError.notConnected }
+        let attempt = generation
+        guard transport.isActive, shell.isActive else { throw SSHSessionError.disconnected }
+        let response: EventLoopFuture<Void>
+        if let pendingProbe {
+            response = pendingProbe
+        } else {
+            response = SSHConnectionProbe.start(on: transport)
+            pendingProbe = response
+            response.whenComplete { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    guard let self, self.generation == attempt, self.pendingProbe === response else { return }
+                    self.pendingProbe = nil
+                }
+            }
+        }
+        try await SSHConnectionProbe.wait(for: response)
+        try ensureCurrent(attempt)
+        guard isConnected, transport.isActive, shell.isActive else { throw SSHSessionError.disconnected }
+    }
+
     public func disconnect() async {
         connectionLifetime?.invalidate()
         connectionLifetime = nil
+        pendingProbe = nil
         generation = UUID()
         connecting = false
         isConnected = false

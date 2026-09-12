@@ -1,6 +1,73 @@
 import XCTest
 
 final class iOSSHUITests: XCTestCase {
+    @MainActor func testJapaneseKanaKeyboardComposesAndConfirmsLocally() async throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-testing"]
+        app.launch()
+        app.buttons["addFirstHost"].tap()
+        app.textFields["hostName"].tap()
+        app.textFields["hostName"].typeText("Japanese input")
+        app.textFields["hostAddress"].tap()
+        app.textFields["hostAddress"].typeText("192.0.2.1")
+        app.textFields["hostUsername"].tap()
+        app.textFields["hostUsername"].typeText("tester")
+        app.buttons["saveHost"].tap()
+        app.buttons["host-Japanese input"].tap()
+        XCTAssertTrue(app.secureTextFields["Password"].waitForExistence(timeout: 10))
+        app.buttons["Cancel"].tap()
+        XCTAssertTrue(app.buttons["Reconnect"].waitForExistence(timeout: 5))
+        let terminal = app.descendants(matching: .any).matching(identifier: "terminal").firstMatch
+        terminal.tap()
+        XCTAssertTrue(app.buttons["terminalAccessoryControl"].waitForExistence(timeout: 5))
+
+        for _ in 0..<5 where !app.keys["あ"].exists {
+            let globe = app.buttons.matching(NSPredicate(format: "label IN %@", ["Next keyboard", "次のキーボード"])).firstMatch
+            guard globe.exists else { break }
+            globe.tap()
+        }
+        guard app.keys["あ"].exists else {
+            throw XCTSkip("Enable the Japanese Kana keyboard on this simulator to exercise real conversion keys.")
+        }
+        app.keys["か"].tap()
+        app.keys["な"].tap()
+        let deadline = ContinuousClock.now.advanced(by: .seconds(5))
+        while !(terminal.value as? String ?? "").contains("かな"), ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(100))
+        }
+        XCTAssertTrue((terminal.value as? String ?? "").contains("かな"), "Kana must remain visible as local marked text.")
+        let screenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        screenshot.name = "Japanese kana preedit and native candidate bar"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+
+        // Kana Return is exposed as a Button with identifier Return and label 改行.
+        // The parent accessibility element intentionally isn't the UITextInput proxy.
+        let confirm = app.buttons["Return"]
+        XCTAssertTrue(confirm.exists)
+        let candidate = app.cells["仮名"]
+        XCTAssertTrue(candidate.waitForExistence(timeout: 5), "The native IME must offer a kanji conversion candidate.")
+        candidate.tap()
+        if !(terminal.value as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { confirm.tap() }
+        let confirmedDeadline = ContinuousClock.now.advanced(by: .seconds(5))
+        while !(terminal.value as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, ContinuousClock.now < confirmedDeadline {
+            try await Task.sleep(for: .milliseconds(100))
+        }
+        // This canceled connection has no remote echo. Confirmed text therefore leaves
+        // the local editor; deterministic tests verify the exact outgoing UTF-8 bytes.
+        XCTAssertTrue((terminal.value as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        app.keys["か"].tap()
+        app.keys["な"].tap()
+        XCTAssertTrue((terminal.value as? String ?? "").contains("かな"))
+        confirm.tap()
+        let returnDeadline = ContinuousClock.now.advanced(by: .seconds(5))
+        while !(terminal.value as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, ContinuousClock.now < returnDeadline {
+            try await Task.sleep(for: .milliseconds(100))
+        }
+        XCTAssertTrue((terminal.value as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        try await assertTerminalIsAboveAccessory(app)
+    }
+
     @MainActor func testTerminalViewportSurvivesKeyboardForegroundAndReconnect() async throws {
         let app = XCUIApplication()
         app.launchArguments = ["--ui-testing"]
