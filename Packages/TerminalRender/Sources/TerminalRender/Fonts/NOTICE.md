@@ -23,3 +23,29 @@ SHA-256:
 6c2d654cceb7ad2164d23e068bbae69647295413432ecfc970400b401d6f9873  HackGenConsoleNF-Regular.ttf
 43b554e7ffccca4c1587d34ec139605bd3fa4b4843446bfb3334ab95cfb44e53  HackGenConsoleNF-Bold.ttf
 ```
+
+## Noto Sans CJK JP 2.004 fallback
+
+The Japanese-region Regular and Bold OpenType files are unmodified copies
+from the official Noto CJK repository, tag `Sans2.004`, commit
+`523d033d6cb47f4a80c58a35753646f5c3608a78`:
+
+https://github.com/notofonts/noto-cjk/releases/tag/Sans2.004
+
+Source files:
+
+- https://raw.githubusercontent.com/notofonts/noto-cjk/523d033d6cb47f4a80c58a35753646f5c3608a78/Sans/OTF/Japanese/NotoSansCJKjp-Regular.otf
+- https://raw.githubusercontent.com/notofonts/noto-cjk/523d033d6cb47f4a80c58a35753646f5c3608a78/Sans/OTF/Japanese/NotoSansCJKjp-Bold.otf
+
+The upstream SIL Open Font License is preserved as `LICENSE_NotoSansCJKJP.txt`.
+These fonts fill missing glyphs behind the selected primary font; HackGen
+Console NF remains the default. Regular/Bold follows terminal style, and
+italic uses a runtime glyph transform without altering the font files.
+The renderer retains terminal cell widths when fitting fallback glyphs.
+
+SHA-256:
+
+```
+68a3fc98800b2a27b371f2fb79991daf3633bd89309d4ffaa6946fd587f375b5  NotoSansCJKjp-Regular.otf
+e53dcb0dcb2922e45d01aae1ebd2f382bb81d4229b18b6b883bd170678af1f76  NotoSansCJKjp-Bold.otf
+```

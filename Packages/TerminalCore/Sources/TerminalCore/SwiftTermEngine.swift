@@ -86,8 +86,14 @@ import Foundation
             var decoder = KittyPlaceholderDecoder()
             for column in 0..<columns {
                 if let line, column < line.count {
-                    let data = line[column]
+                    var data = line[column]
                     let text = String(terminal.getCharacter(for: data))
+                    if data.width == 0, text == "\0", column > 0, line[column - 1].width == 2 {
+                        // SwiftTerm 1.20.0 builds wide-character stubs with a stale
+                        // Attribute.empty, giving their right half an inverted background.
+                        // Normalize only genuine continuation cells in this snapshot copy.
+                        data.attribute = line[column - 1].attribute
+                    }
                     if let placeholder = decoder.decode(text: text, attribute: data.attribute, column: column, row: row), placeholders.count < 16_384 {
                         placeholders.append(placeholder)
                     }

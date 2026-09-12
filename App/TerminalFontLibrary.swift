@@ -139,7 +139,7 @@ final class TerminalFontLibrary {
             for entry in saved {
                 do {
                     guard ["ttf", "otf"].contains(entry.fileExtension),
-                          ![TerminalFont.postScriptName, "HackGenConsoleNF-Bold"].contains(entry.postScriptName),
+                          !TerminalFont.bundledPostScriptNames.contains(entry.postScriptName),
                           !fonts.contains(where: { $0.id == entry.id || $0.postScriptName == entry.postScriptName }) else {
                         throw ImportError.invalidFont
                     }
@@ -166,7 +166,7 @@ final class TerminalFontLibrary {
     }
 
     private static func checkAvailable(_ postScriptName: String, fingerprint: SHA256.Digest) throws {
-        guard ![TerminalFont.postScriptName, "HackGenConsoleNF-Bold"].contains(postScriptName) else { throw ImportError.alreadyAvailable }
+        guard !TerminalFont.bundledPostScriptNames.contains(postScriptName) else { throw ImportError.alreadyAvailable }
         guard UIFont(name: postScriptName, size: 14) != nil else { return }
         guard let loaded = loadedFonts[postScriptName] else { throw ImportError.alreadyAvailable }
         guard loaded.fingerprint == fingerprint else { throw ImportError.nameInUse }

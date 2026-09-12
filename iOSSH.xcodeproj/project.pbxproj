@@ -24,6 +24,7 @@
 		BE99510FCB268470B6D7B28F /* TailscaleAuthentication.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0FFC2F0CD866D558B0ED0BBC /* TailscaleAuthentication.swift */; };
 		C7969DFDF165C28DBB2963D6 /* TerminalFontLibraryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CB0BC27787CF8C4490CD014 /* TerminalFontLibraryTests.swift */; };
 		D18D09E95C6FB0D022EE139E /* TerminalInputTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3481CB020510DBA908C3300 /* TerminalInputTests.swift */; };
+		E91839CE51901FE6F41107AE /* TerminalOutputTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79832E5C775352D87B6AA169 /* TerminalOutputTests.swift */; };
 		F009168C381D399C08D1F85C /* HostListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CE3DBF767613DEA56210592 /* HostListView.swift */; };
 /* End PBXBuildFile section */
 
@@ -55,6 +56,7 @@
 		6582940BDC26ABD3D4A5ECC0 /* iOSSH.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = iOSSH.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		7188BD088FE6300D2A9269FB /* TerminalScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalScreen.swift; sourceTree = "<group>"; };
 		731526C7B108797D5F45E403 /* HostRecord.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostRecord.swift; sourceTree = "<group>"; };
+		79832E5C775352D87B6AA169 /* TerminalOutputTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalOutputTests.swift; sourceTree = "<group>"; };
 		8CB0BC27787CF8C4490CD014 /* TerminalFontLibraryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalFontLibraryTests.swift; sourceTree = "<group>"; };
 		9DD4F05CEEF4A486E17BCFC1 /* TerminalCore */ = {isa = PBXFileReference; lastKnownFileType = folder; name = TerminalCore; path = Packages/TerminalCore; sourceTree = SOURCE_ROOT; };
 		A65499EC7081306038E361E1 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
@@ -108,6 +110,7 @@
 				8CB0BC27787CF8C4490CD014 /* TerminalFontLibraryTests.swift */,
 				B77019520186EBCCB9A49939 /* TerminalFontTests.swift */,
 				C3481CB020510DBA908C3300 /* TerminalInputTests.swift */,
+				79832E5C775352D87B6AA169 /* TerminalOutputTests.swift */,
 				C11265FA4D2A5C381E689173 /* TerminalViewportTests.swift */,
 			);
 			path = AppTests;
@@ -275,6 +278,7 @@
 				C7969DFDF165C28DBB2963D6 /* TerminalFontLibraryTests.swift in Sources */,
 				BA6AECCD800D72CE129DC4E4 /* TerminalFontTests.swift in Sources */,
 				D18D09E95C6FB0D022EE139E /* TerminalInputTests.swift in Sources */,
+				E91839CE51901FE6F41107AE /* TerminalOutputTests.swift in Sources */,
 				375F741B0F46FCFBDD506F79 /* TerminalViewportTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -408,7 +412,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 4;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = App/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -462,7 +466,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 4;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = App/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (

@@ -27,6 +27,9 @@ struct SettingsView: View {
                             Text(font.displayName).tag(font.postScriptName)
                         }
                     }
+                    LabeledContent("Japanese fallback", value: TerminalFont.fallbackDisplayName)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
                     Text("\u{f07c} ~/開発  \u{e0a0} main\n\u{276f} echo 日本語")
                         .font(Font(fontLibrary.font(ofSize: fontSize, selection: fontName)))
                         .foregroundStyle(theme == "dark" ? .white : .black)
@@ -68,7 +71,7 @@ struct SettingsView: View {
                 } header: {
                     Text("Imported fonts")
                 } footer: {
-                    Text("Use monospaced .ttf or .otf files, up to 32 MB each. Fonts are copied into iOSSH. Japanese and symbol coverage depends on the font. Removing the selected font restores HackGen Console NF.")
+                    Text("Use monospaced .ttf or .otf files, up to 32 MB each. Fonts are copied into iOSSH. Missing Japanese glyphs use Noto Sans CJK JP. Removing the selected font restores HackGen Console NF.")
                 }
                 Section("Using the terminal") {
                     Label("Swipe vertically to browse scrollback.", systemImage: "hand.draw")

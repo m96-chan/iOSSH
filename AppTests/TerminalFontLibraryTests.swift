@@ -20,6 +20,14 @@ struct TerminalFontLibraryTests {
         #expect(try Data(contentsOf: owned) == Data(contentsOf: source))
         #expect(library.selectedFontName == entry.postScriptName)
         #expect(library.font(ofSize: 14, selection: entry.postScriptName).fontName == entry.postScriptName)
+        let importedFont = library.font(ofSize: 14, selection: entry.postScriptName)
+        let fallbackLine = CTLineCreateWithAttributedString(NSAttributedString(string: "\u{30ede}", attributes: [.font: importedFont]))
+        let fallbackRuns = CTLineGetGlyphRuns(fallbackLine) as! [CTRun]
+        #expect(!fallbackRuns.isEmpty)
+        for run in fallbackRuns {
+            let runFont = (CTRunGetAttributes(run) as NSDictionary)[kCTFontAttributeName] as! CTFont
+            #expect(CTFontCopyPostScriptName(runFont) as String == TerminalFont.fallbackPostScriptName)
+        }
         try FileManager.default.removeItem(at: source)
 
         let restored = fixture.library()

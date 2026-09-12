@@ -138,7 +138,17 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         }
         let semaphore = inFlight
         command.addCompletedHandler { _ in semaphore.signal() }
-        var viewport = SIMD2(Float(view.drawableSize.width), Float(view.drawableSize.height))
+        encodeFrame(to: encoder, drawableSize: view.drawableSize)
+        encoder.endEncoding()
+        command.present(drawable)
+        command.commit()
+    }
+
+    /// Encodes the same terminal frame into either an MTKView or an offscreen render target.
+    /// The caller owns the render pass and must complete each use of a frame buffer before
+    /// encoding more than three frames, matching the view's in-flight semaphore.
+    func encodeFrame(to encoder: any MTLRenderCommandEncoder, drawableSize: CGSize) {
+        var viewport = SIMD2(Float(drawableSize.width), Float(drawableSize.height))
         encoder.setVertexBytes(&viewport, length: MemoryLayout<SIMD2<Float>>.stride, index: 1)
 
         if let snapshot, snapshot.columns > 0, snapshot.rows > 0,
@@ -196,9 +206,6 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
                 drawCursor(snapshot, encoder: encoder)
             }
         }
-        encoder.endEncoding()
-        command.present(drawable)
-        command.commit()
     }
 
     private func rebuild(row: Int, snapshot: TerminalSnapshot) {

@@ -19,6 +19,97 @@ import ImageIO
         #expect(screen[6, 0].text == "Z")
     }
 
+    @Test(arguments: [false, true])
+    func wideJapaneseContinuationUsesTheSameThemeOnBothHalves(light: Bool) {
+        let engine = SwiftTermEngine(columns: 12, rows: 3)
+        let foreground = light ? TerminalColor(red: 20, green: 23, blue: 28) : .foreground
+        let background = light ? TerminalColor(red: 245, green: 245, blue: 245) : .background
+        engine.setColors(foreground: foreground, background: background, palette: Array(repeating: foreground, count: 16))
+        // Japanese letters and ideographic space all use a two-cell glyph. Every UTF-8
+        // boundary can arrive in another packet without changing the continuation style.
+        for byte in "日\u{3000}本".utf8 { engine.feed(Data([byte])) }
+        let screen = engine.snapshot()
+        for column in stride(from: 0, to: 6, by: 2) {
+            let lead = screen[column, 0]
+            #expect(lead.width == 2)
+            #expect(lead.foreground == foreground)
+            #expect(lead.background == background)
+            #expect(screen[column + 1, 0] == continuation(of: lead))
+        }
+        #expect(screen[2, 0].text == "\u{3000}")
+        #expect(screen[6, 0].width == 1)
+        #expect(screen[6, 0].background == background)
+    }
+
+    @Test(arguments: [false, true])
+    func wideContinuationPreservesTruecolorInverseAndEveryVisualStyle(inverse: Bool) {
+        let engine = SwiftTermEngine(columns: 12, rows: 3)
+        let foreground = TerminalColor(red: 17, green: 34, blue: 51)
+        let background = TerminalColor(red: 68, green: 85, blue: 102)
+        let underline = TerminalColor(red: 119, green: 136, blue: 153)
+        let sgr = "\u{1b}[1;2;3;5;8;9;4:3;38;2;17;34;51;48;2;68;85;102;58;2;119;136;153m"
+            + (inverse ? "\u{1b}[7m" : "")
+        for byte in (sgr + "日\u{3000}").utf8 { engine.feed(Data([byte])) }
+        engine.feed(Data("\u{1b}[0;38;2;201;202;203;48;2;204;205;206mX".utf8))
+        let screen = engine.snapshot()
+        for column in [0, 2] {
+            let lead = screen[column, 0]
+            #expect(lead.foreground == (inverse ? background : foreground))
+            #expect(lead.background == (inverse ? foreground : background))
+            #expect(lead.attributes.contains([.bold, .dim, .italic, .blink, .invisible, .strikethrough, .underline]))
+            #expect(lead.attributes.contains(.inverse) == inverse)
+            #expect(lead.underlineStyle == .curly)
+            #expect(lead.underlineColor == underline)
+            #expect(screen[column + 1, 0] == continuation(of: lead))
+        }
+        // A following ordinary cell retains its own style instead of inheriting a wide glyph's.
+        #expect(screen[4, 0].text == "X")
+        #expect(screen[4, 0].width == 1)
+        #expect(screen[4, 0].foreground == TerminalColor(red: 201, green: 202, blue: 203))
+        #expect(screen[4, 0].background == TerminalColor(red: 204, green: 205, blue: 206))
+        #expect(screen[4, 0].attributes.isEmpty)
+        #expect(screen[4, 0].underlineColor == nil)
+    }
+
+    private func continuation(of lead: TerminalCell) -> TerminalCell {
+        TerminalCell(text: " ", width: 0, foreground: lead.foreground, background: lead.background,
+                     attributes: lead.attributes, underlineStyle: lead.underlineStyle, underlineColor: lead.underlineColor)
+    }
+
+    @Test func longJapaneseOutputKeepsWideCellsAcrossPacketsAndReflow() {
+        let engine = SwiftTermEngine(columns: 33, rows: 40)
+        let japanese = "日本語の出力確認" + String((0..<384).compactMap { UnicodeScalar(0x4E00 + $0) }.map(Character.init))
+        let bytes = Array(japanese.utf8)
+        var offset = 0
+        while offset < bytes.count {
+            let end = min(bytes.count, offset + offset % 19 + 1)
+            engine.feed(Data(bytes[offset..<end]))
+            offset = end
+        }
+        func check(_ screen: TerminalSnapshot) {
+            let visible = screen.cells.filter { $0.width > 0 && $0.text != " " }.map(\.text).joined()
+            #expect(visible == japanese)
+            for row in 0..<screen.rows {
+                for column in 0..<screen.columns where screen[column, row].text != " " {
+                    let cell = screen[column, row]
+                    #expect(cell.width == 2)
+                    #expect(column + 1 < screen.columns)
+                    if column + 1 < screen.columns {
+                        #expect(screen[column + 1, row].width == 0)
+                        #expect(screen[column + 1, row].text == " ")
+                        #expect(screen[column + 1, row] == continuation(of: cell))
+                    }
+                }
+            }
+        }
+        check(engine.snapshot())
+        // Complete this paragraph before resizing: SwiftTerm intentionally leaves the
+        // cursor's active paragraph for the remote application to redraw on SIGWINCH.
+        engine.feed(Data("\r\n".utf8))
+        engine.resize(columns: 25, rows: 40)
+        check(engine.snapshot())
+    }
+
     @Test func cursorEraseAndAlternateScreen() {
         let engine = SwiftTermEngine(columns: 12, rows: 3)
         engine.feed(Data("hello\u{1b}[2;3Hworld\u{1b}[?25l".utf8))

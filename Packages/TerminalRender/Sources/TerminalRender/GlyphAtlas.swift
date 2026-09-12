@@ -40,7 +40,11 @@ final class GlyphAtlas {
     }
 
     func glyph(text: String, width: Int, bold: Bool, italic: Bool) -> Glyph? {
-        guard !text.isEmpty, text != " ", width > 0 else { return nil }
+        // Blank cells, including U+3000, have no glyph. Do not ask a font fallback
+        // to draw control padding or allocate atlas space for terminal whitespace.
+        guard width > 0, text.unicodeScalars.contains(where: {
+            $0.value != 0 && !CharacterSet.whitespacesAndNewlines.contains($0)
+        }) else { return nil }
         let key = Key(text: text, width: width, bold: bold, italic: italic)
         if let result = glyphs[key] { return result }
         let pixelWidth = min(side - 2, Int(ceil(cellSize.width * CGFloat(min(2, width)) * scale)))
@@ -124,9 +128,22 @@ final class GlyphAtlas {
             }
         }
         let page = textures.count - 1
-        pixels.withUnsafeBytes { bytes in
-            textures[page].replace(region: MTLRegionMake2D(x, y, pixelWidth, pixelHeight), mipmapLevel: 0,
-                                   withBytes: bytes.baseAddress!, bytesPerRow: bytesPerRow)
+        // Texture allocation does not initialize its contents. Upload a transparent
+        // one-pixel gutter as well as the glyph, so edge sampling can never read
+        // undefined pixels or leak ink from the adjacent atlas entry.
+        let paddedWidth = pixelWidth + 2
+        var paddedPixels = [UInt8](repeating: 0, count: paddedWidth * (pixelHeight + 2) * 4)
+        paddedPixels.withUnsafeMutableBytes { destination in
+            pixels.withUnsafeBytes { source in
+                for row in 0..<pixelHeight {
+                    destination.baseAddress!.advanced(by: ((row + 1) * paddedWidth + 1) * 4)
+                        .copyMemory(from: source.baseAddress!.advanced(by: row * bytesPerRow), byteCount: bytesPerRow)
+                }
+            }
+        }
+        paddedPixels.withUnsafeBytes { bytes in
+            textures[page].replace(region: MTLRegionMake2D(x - 1, y - 1, paddedWidth, pixelHeight + 2), mipmapLevel: 0,
+                                   withBytes: bytes.baseAddress!, bytesPerRow: paddedWidth * 4)
         }
         let result = Glyph(page: page,
                            uv: SIMD4(Float(x) / Float(side), Float(y) / Float(side), Float(pixelWidth) / Float(side), Float(pixelHeight) / Float(side)),

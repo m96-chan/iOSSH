@@ -31,6 +31,52 @@ struct TerminalFontTests {
     }
 
     @Test
+    func missingCJKGlyphsUseTheBundledJapaneseFallbackAndMatchingStyle() throws {
+        let samples = ["\u{3400}", "\u{20021}", "\u{30ede}"]
+        let atlas = try atlas()
+        for bold in [false, true] {
+            for italic in [false, true] {
+                let font = TerminalFont.font(ofSize: 16, bold: bold, italic: italic)
+                let primaryCharacters = CTFontCopyCharacterSet(font as CTFont) as CharacterSet
+                for text in samples {
+                    // These scalars are absent in HackGen, so the test cannot pass by
+                    // silently drawing the primary font or an unrelated system CJK face.
+                    #expect(text.unicodeScalars.allSatisfy { !primaryCharacters.contains($0) })
+                    let line = CTLineCreateWithAttributedString(NSAttributedString(string: text, attributes: [.font: font]))
+                    let runs = CTLineGetGlyphRuns(line) as! [CTRun]
+                    #expect(!runs.isEmpty)
+                    for run in runs {
+                        let runFont = (CTRunGetAttributes(run) as NSDictionary)[kCTFontAttributeName] as! CTFont
+                        #expect(CTFontCopyPostScriptName(runFont) as String == "NotoSansCJKjp-\(bold ? "Bold" : "Regular")")
+                        if italic { #expect(CTFontGetMatrix(runFont).c > 0) }
+                        var glyphs = [CGGlyph](repeating: 0, count: CTRunGetGlyphCount(run))
+                        CTRunGetGlyphs(run, CFRange(location: 0, length: 0), &glyphs)
+                        #expect(glyphs.allSatisfy { $0 != 0 })
+                    }
+                    let rendered = try pixels(atlas, text: text, width: 2, bold: bold, italic: italic)
+                    #expect(rendered.inkBounds != nil)
+                    #expect(rendered.width == Int(ceil(atlas.cellSize.width * 2 * atlas.scale)))
+                    #expect(!rendered.isColor)
+                }
+            }
+        }
+    }
+
+    @Test
+    func latinPrimaryStillUsesNotoJPForJapaneseAndHackGenForNerdSymbols() {
+        let font = TerminalFont.font(named: "Menlo-Regular", size: 14)
+        for (text, expected) in [("日本語", "NotoSansCJKjp-Regular"), ("\u{f0318}", "HackGenConsoleNF-Regular")] {
+            let line = CTLineCreateWithAttributedString(NSAttributedString(string: text, attributes: [.font: font]))
+            let runs = CTLineGetGlyphRuns(line) as! [CTRun]
+            #expect(!runs.isEmpty)
+            for run in runs {
+                let runFont = (CTRunGetAttributes(run) as NSDictionary)[kCTFontAttributeName] as! CTFont
+                #expect(CTFontCopyPostScriptName(runFont) as String == expected)
+            }
+        }
+    }
+
+    @Test
     func synthesizedItalicChangesTheActualGlyphSlant() throws {
         let atlas = try atlas()
         let upright = try pixels(atlas, text: "H", width: 1)
@@ -142,8 +188,8 @@ struct TerminalFontTests {
         }
     }
 
-    private func pixels(_ atlas: GlyphAtlas, text: String, width: Int, italic: Bool = false) throws -> Pixels {
-        let glyph = try #require(atlas.glyph(text: text, width: width, bold: false, italic: italic))
+    private func pixels(_ atlas: GlyphAtlas, text: String, width: Int, bold: Bool = false, italic: Bool = false) throws -> Pixels {
+        let glyph = try #require(atlas.glyph(text: text, width: width, bold: bold, italic: italic))
         let texture = atlas.textures[glyph.page]
         let pixelWidth = Int(glyph.size.x), pixelHeight = Int(glyph.size.y)
         let region = MTLRegionMake2D(Int((glyph.uv.x * Float(texture.width)).rounded()),

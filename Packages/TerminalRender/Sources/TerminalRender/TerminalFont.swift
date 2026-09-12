@@ -5,16 +5,23 @@ import UIKit
 public enum TerminalFont {
     public static let displayName = "HackGen Console NF"
     public static let postScriptName = "HackGenConsoleNF-Regular"
+    public static let fallbackDisplayName = "Noto Sans CJK JP"
+    public static let fallbackPostScriptName = "NotoSansCJKjp-Regular"
+    public static let bundledPostScriptNames: Set<String> = [
+        "HackGenConsoleNF-Regular", "HackGenConsoleNF-Bold", "NotoSansCJKjp-Regular", "NotoSansCJKjp-Bold"
+    ]
 
     // Swift package resources are not registered through the application's UIAppFonts key.
     // Register every style together before UIFont or Core Text first resolves this family.
     @MainActor private static let registered: Void = {
         for style in ["Regular", "Bold"] {
-            guard let url = resourceURL(forStyle: style) else {
-                assertionFailure("Missing bundled terminal font: \(style)")
-                continue
+            for url in [resourceURL(forStyle: style), fallbackResourceURL(forStyle: style)] {
+                guard let url else {
+                    assertionFailure("Missing bundled terminal font: \(style)")
+                    continue
+                }
+                CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
             }
-            CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
         }
     }()
 
@@ -22,11 +29,12 @@ public enum TerminalFont {
         _ = registered
         let base = UIFont(name: "HackGenConsoleNF-\(bold ? "Bold" : "Regular")", size: size)
             ?? .monospacedSystemFont(ofSize: size, weight: bold ? .bold : .regular)
-        return italic ? slanted(base) : base
+        return withFallbacks(italic ? slanted(base) : base, bold: bold, italic: italic)
     }
 
     @MainActor public static func font(named name: String, size: CGFloat, bold: Bool = false, italic: Bool = false) -> UIFont {
         if name == postScriptName { return font(ofSize: size, bold: bold, italic: italic) }
+        _ = registered
         var base = UIFont(name: name, size: size) ?? font(ofSize: size)
         var traits = base.fontDescriptor.symbolicTraits
         if bold { traits.insert(.traitBold) }
@@ -35,7 +43,23 @@ public enum TerminalFont {
             let styled = UIFont(descriptor: descriptor, size: size)
             if styled.familyName == base.familyName { base = styled }
         }
-        return italic && !base.fontDescriptor.symbolicTraits.contains(.traitItalic) ? slanted(base) : base
+        let useBold = bold || base.fontDescriptor.symbolicTraits.contains(.traitBold)
+        let useItalic = italic || base.fontDescriptor.symbolicTraits.contains(.traitItalic)
+        if italic && !base.fontDescriptor.symbolicTraits.contains(.traitItalic) { base = slanted(base) }
+        return withFallbacks(base, bold: useBold, italic: useItalic)
+    }
+
+    @MainActor private static func withFallbacks(_ primary: UIFont, bold: Bool, italic: Bool) -> UIFont {
+        let style = bold ? "Bold" : "Regular"
+        // Explicit JP faces prevent the device language from selecting another CJK
+        // regional glyph form. Core Text still appends its system/emoji fallback list.
+        let names = ["NotoSansCJKjp-\(style)", "HackGenConsoleNF-\(style)"]
+        let cascade = names.filter { $0 != primary.fontName }.compactMap { name -> CTFontDescriptor? in
+            guard let font = UIFont(name: name, size: primary.pointSize) else { return nil }
+            return CTFontCopyFontDescriptor((italic ? slanted(font) : font) as CTFont)
+        }
+        let attributes = CTFontDescriptorCreateWithAttributes([kCTFontCascadeListAttribute: cascade] as CFDictionary)
+        return CTFontCreateCopyWithAttributes(primary as CTFont, primary.pointSize, nil, attributes) as UIFont
     }
 
     @MainActor private static func slanted(_ font: UIFont) -> UIFont {
@@ -51,9 +75,13 @@ public enum TerminalFont {
         Bundle.module.url(forResource: "HackGenConsoleNF-\(style)", withExtension: "ttf", subdirectory: "Fonts")
     }
 
+    static func fallbackResourceURL(forStyle style: String) -> URL? {
+        Bundle.module.url(forResource: "NotoSansCJKjp-\(style)", withExtension: "otf", subdirectory: "Fonts")
+    }
+
     /// Notices are also kept beside the unmodified font files in the resource bundle.
     public static var licenseText: String {
-        ["LICENSE", "LICENSE_GenJyuuGothic", "LICENSE_Hack", "LICENSE_NerdFonts"].compactMap { name in
+        ["LICENSE", "LICENSE_GenJyuuGothic", "LICENSE_Hack", "LICENSE_NerdFonts", "LICENSE_NotoSansCJKJP"].compactMap { name in
             guard let url = Bundle.module.url(forResource: name, withExtension: "txt", subdirectory: "Fonts") else { return nil }
             return try? String(contentsOf: url, encoding: .utf8)
         }.joined(separator: "\n\n")
