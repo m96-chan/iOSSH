@@ -38,12 +38,14 @@ final class KeyboardResizeUITests: XCTestCase {
             let terminalTop = terminal.frame.minY
             // iPad can hide its keyboard with either the app accessory or the
             // system keyboard's own button; exercise both dismissal paths.
-            let dismiss = isPad && cycle == 2
-                ? app.buttons.matching(NSPredicate(format: "label == %@ AND identifier != %@",
-                                                   "Hide keyboard", "terminalDismissKeyboard")).firstMatch
-                : app.buttons["terminalDismissKeyboard"]
-            XCTAssertTrue(dismiss.exists)
-            dismiss.tap()
+            if isPad && cycle == 2 {
+                let dismiss = app.buttons.matching(NSPredicate(format: "label == %@ AND identifier != %@",
+                                                               "Hide keyboard", "terminalDismissKeyboard")).firstMatch
+                XCTAssertTrue(dismiss.exists)
+                dismiss.tap()
+            } else {
+                try await dismissAccessoryKeyboard(in: app)
+            }
             if isPad && cycle == 2 {
                 // UIKit may leave the accessory visible when its own button
                 // collapses the software keyboard. Fill up to that live bar,
@@ -56,7 +58,7 @@ final class KeyboardResizeUITests: XCTestCase {
                         let gap = control.frame.minY - terminal.frame.maxY
                         return gap >= 3 && gap <= 20
                     }
-                    app.buttons["terminalDismissKeyboard"].tap()
+                    try await dismissAccessoryKeyboard(in: app)
                 }
             }
             XCTAssertTrue(control.waitForNonExistence(timeout: 5))
@@ -76,6 +78,23 @@ final class KeyboardResizeUITests: XCTestCase {
             screenshot.lifetime = .keepAlways
             add(screenshot)
         }
+    }
+
+    @MainActor private func dismissAccessoryKeyboard(in app: XCUIApplication) async throws {
+        let dismiss = app.buttons["terminalDismissKeyboard"]
+        XCTAssertTrue(dismiss.waitForExistence(timeout: 5))
+        // On narrow phones the last accessory key needs a horizontal scroll.
+        // XCTest's implicit scroll-to-tap can leave it without a hit point, so
+        // perform the same swipe a user would before tapping the visible key.
+        let scroll = app.scrollViews.containing(.button, identifier: "terminalDismissKeyboard").firstMatch
+        for _ in 0..<2 where !dismiss.isHittable {
+            XCTAssertTrue(scroll.exists)
+            scroll.swipeLeft()
+        }
+        try await waitUntil("The accessory's Hide keyboard button must be tappable after scrolling") {
+            dismiss.isHittable
+        }
+        dismiss.tap()
     }
 
     @MainActor private func waitUntil(_ message: @autoclosure () -> String, condition: () -> Bool) async throws {
