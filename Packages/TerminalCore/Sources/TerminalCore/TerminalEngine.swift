@@ -123,6 +123,10 @@ public enum TerminalKey: Sendable { case escape, tab, enter, backspace, up, down
 @MainActor public protocol TerminalEngine: AnyObject {
     var onOutput: ((Data) -> Void)? { get set }
     var onNeedsDisplay: (() -> Void)? { get set }
+    /// Release any retained snapshot synchronously when decoded images are
+    /// removed, including from another session's shared-budget allocation. Do not
+    /// call back into the parser here; `onNeedsDisplay` follows for scheduling.
+    var onImageCacheInvalidated: (() -> Void)? { get set }
     var onTitleChange: ((String) -> Void)? { get set }
     var columns: Int { get }
     var rows: Int { get }

@@ -81,4 +81,29 @@ struct TerminalViewportTests {
         #expect(grid.height == 7)
         #expect(grid.height * cell.height <= accessory.minY)
     }
+
+    @Test
+    func floatingKeyboardMovesTheCompositionAnchorWithoutReducingTheGrid() {
+        let viewport = CGRect(x: 0, y: 0, width: 800, height: 580)
+        let keyboard = CGRect(x: 300, y: 250, width: 320, height: 280)
+        let frame = TerminalTextInputLayout.frame(cursor: CGRect(x: 450, y: 400, width: 10, height: 20),
+            viewport: viewport, preferredSize: CGSize(width: 180, height: 40), avoiding: keyboard)
+        #expect(viewport.contains(frame))
+        #expect(!frame.intersects(keyboard))
+        #expect(frame.size == CGSize(width: 180, height: 40))
+        let visible = TerminalViewportLayout.visibleBounds(in: viewport, safeAreaBottom: 0,
+            keyboardFrame: nil, accessoryFrame: CGRect(x: 300, y: 206, width: 320, height: 44))
+        #expect(visible == viewport)
+    }
+
+    @Test
+    func floatingKeyboardOutsideTheCaretLeavesCompositionPositionUnchanged() {
+        let viewport = CGRect(x: 0, y: 0, width: 800, height: 580)
+        let cursor = CGRect(x: 20, y: 20, width: 10, height: 20)
+        let preferred = CGSize(width: 180, height: 40)
+        let normal = TerminalTextInputLayout.frame(cursor: cursor, viewport: viewport, preferredSize: preferred)
+        let floating = TerminalTextInputLayout.frame(cursor: cursor, viewport: viewport, preferredSize: preferred,
+            avoiding: CGRect(x: 300, y: 250, width: 320, height: 280))
+        #expect(normal == floating)
+    }
 }

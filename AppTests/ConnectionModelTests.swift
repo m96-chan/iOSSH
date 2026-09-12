@@ -556,4 +556,206 @@ struct ConnectionModelTests {
         #expect(model.message == HostKeyError.rejected.localizedDescription)
         await model.close()
     }
+
+    @Test(.timeLimit(.minutes(1)))
+    func hiddenSessionParsesOutputWithoutPublishingSnapshotsOrResizingItsPTY() async throws {
+        let transport = TestTransport()
+        let model = ConnectionModel(host: host, dependencies: dependencies(transport))
+        await model.connect()
+        transport.onData?(Data("visible output".utf8))
+        try await waitUntil { model.snapshot?.cells == model.engine.snapshot().cells }
+        let visibleCells = model.snapshot?.cells
+        let visibleSize = [model.engine.columns, model.engine.rows]
+        model.setVisible(false)
+        transport.onData?(Data("\r\nhidden output 日本語".utf8))
+        model.resize(columns: 20, rows: 10) // A stale renderer must not resize an inactive shell.
+        try await Task.sleep(for: .milliseconds(30))
+        #expect(model.snapshot?.cells == visibleCells)
+        #expect(model.engine.snapshot().cells != visibleCells)
+        #expect([model.engine.columns, model.engine.rows] == visibleSize)
+        #expect(transport.isConnected)
+        model.setVisible(true)
+        #expect(model.snapshot?.cells == model.engine.snapshot().cells)
+        model.resize(columns: 100, rows: 30)
+        try await waitUntil { transport.sizes.last == [100, 30] }
+        #expect(transport.connectCalls == 1)
+        await model.close()
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func laterKeepsCredentialRequestPendingUntilExplicitlyResumed() async throws {
+        let transport = TestTransport()
+        let model = ConnectionModel(host: host, dependencies: dependencies(transport))
+        let connecting = Task { await model.connect(enterCredential: true) }
+        defer { connecting.cancel(); Task { await model.close() } }
+        try await waitUntil { model.credentialRequestID != nil }
+        let request = try #require(model.credentialRequestID)
+        let attempt = model.connectionAttemptID
+        model.deferAuthentication(attemptID: attempt)
+        model.credentialSheetDidDismiss(requestID: request, attemptID: attempt)
+        #expect(model.credentialRequestID == request)
+        #expect(model.isAuthenticationDeferred)
+        #expect(model.needsAuthenticationAttention)
+        #expect(!model.credentialPrompt)
+        #expect(model.phase == .connecting)
+        #expect(transport.connectCalls == 0)
+        model.setVisible(false)
+        model.setVisible(true)
+        #expect(!model.credentialPrompt) // Selecting the tab alone is not the attention action.
+        model.resumeAuthentication()
+        #expect(model.credentialPrompt)
+        model.submitCredential(.init(credential: SSHCredential(password: "resumed"), save: false),
+                               requestID: request, attemptID: attempt)
+        model.credentialSheetDidDismiss(requestID: request, attemptID: attempt)
+        await connecting.value
+        #expect(model.phase == .connected)
+        #expect(transport.receivedCredential?.password == "resumed")
+        #expect(!model.needsAuthenticationAttention)
+        await model.close()
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func oldCredentialCallbacksCannotAnswerOrCancelANewRequest() async throws {
+        let transport = TestTransport()
+        let model = ConnectionModel(host: host, dependencies: dependencies(transport))
+        let first = Task { await model.connect(enterCredential: true) }
+        try await waitUntil { model.credentialRequestID != nil }
+        let oldRequest = try #require(model.credentialRequestID)
+        let oldAttempt = model.connectionAttemptID
+        await model.close()
+        await first.value
+        let second = Task { await model.connect(enterCredential: true) }
+        defer { second.cancel(); Task { await model.close() } }
+        try await waitUntil { model.credentialRequestID != nil }
+        let newRequest = try #require(model.credentialRequestID)
+        let newAttempt = model.connectionAttemptID
+        #expect(oldRequest != newRequest)
+        model.submitCredential(.init(credential: SSHCredential(password: "stale"), save: false),
+                               requestID: oldRequest, attemptID: oldAttempt)
+        model.credentialSheetDidDismiss(requestID: oldRequest, attemptID: oldAttempt)
+        model.deferAuthentication(attemptID: oldAttempt)
+        #expect(model.credentialRequestID == newRequest)
+        #expect(model.credentialPrompt)
+        #expect(!model.isAuthenticationDeferred)
+        #expect(transport.connectCalls == 0)
+        model.submitCredential(nil, requestID: newRequest, attemptID: newAttempt)
+        model.credentialSheetDidDismiss(requestID: newRequest, attemptID: newAttempt)
+        await second.value
+        #expect(model.phase == .disconnected)
+        #expect(transport.connectCalls == 0)
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func deferredTrustSurvivesSwitchingAndRejectsAnOldRequestID() async throws {
+        let transport = TestTransport()
+        transport.requiresTrust = true
+        let model = ConnectionModel(host: host, dependencies: dependencies(transport))
+        let connecting = Task { await model.connect() }
+        defer { connecting.cancel(); Task { await model.close() } }
+        try await waitUntil { model.trustPrompt != nil }
+        let prompt = try #require(model.trustPrompt)
+        model.setVisible(false)
+        #expect(model.isAuthenticationDeferred)
+        #expect(model.trustPrompt?.id == prompt.id)
+        model.setVisible(true)
+        model.resumeAuthentication()
+        model.answerTrust(false, requestID: UUID(), attemptID: prompt.attemptID)
+        #expect(model.trustPrompt?.id == prompt.id)
+        #expect(transport.trustDecisions.isEmpty)
+        model.answerTrust(true, requestID: prompt.id, attemptID: prompt.attemptID)
+        await connecting.value
+        #expect(model.phase == .connected)
+        #expect(transport.trustDecisions == [true])
+        await model.close()
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func hiddenConnectWaitsBeforeStartingKeychainBiometrics() async throws {
+        let transport = TestTransport()
+        var credentialLoads = 0
+        let model = ConnectionModel(host: host, dependencies: dependencies(transport) { _ in
+            credentialLoads += 1
+            return SSHCredential(password: "unlocked")
+        })
+        model.setVisible(false)
+        let connecting = Task { await model.connect() }
+        defer { connecting.cancel(); Task { await model.close() } }
+        try await waitUntil { model.isWaitingForCredentialUnlock }
+        #expect(credentialLoads == 0)
+        #expect(model.needsAuthenticationAttention)
+        model.setVisible(true)
+        #expect(credentialLoads == 0)
+        #expect(model.isAuthenticationDeferred)
+        model.resumeAuthentication()
+        await connecting.value
+        #expect(model.phase == .connected)
+        #expect(credentialLoads == 1)
+        #expect(!model.needsAuthenticationAttention)
+        await model.close()
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func connectedPTYResizeCompletesBeforeInputFromTheNewLayout() async throws {
+        let transport = TestTransport()
+        let model = ConnectionModel(host: host, dependencies: dependencies(transport))
+        await model.connect()
+        let resizing = Suspension()
+        transport.resizeSuspension = resizing
+        defer { resizing.release(); Task { await model.close() } }
+        model.resize(columns: 113, rows: 31)
+        model.sendUserInput(Data("after resize\r".utf8), attemptID: model.connectionAttemptID)
+        try await waitUntil { resizing.arrived }
+        #expect(transport.writes.isEmpty)
+        #expect(transport.sizes.last == [113, 31])
+        resizing.release()
+        try await waitUntil { transport.writes.count == 1 }
+        #expect(transport.writes == [Data("after resize\r".utf8)])
+        await model.close()
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func tabSwitchDiscardsUnsentPasteButKeepsHiddenProtocolReplies() async throws {
+        let transport = TestTransport()
+        let model = ConnectionModel(host: host, dependencies: dependencies(transport))
+        await model.connect()
+        let writing = Suspension()
+        transport.writeSuspension = writing
+        defer { writing.release(); Task { await model.close() } }
+        let attempt = model.connectionAttemptID
+        model.sendUserInput(Data("in flight".utf8), attemptID: attempt)
+        try await waitUntil { writing.arrived }
+        model.pasteUserInput("unsent paste", attemptID: attempt)
+        model.setVisible(false)
+        model.sendUserKey(.enter, attemptID: attempt) // Stale UIKit callback.
+        model.send(Data("protocol reply".utf8))
+        model.setVisible(true) // Switching back cannot resurrect the old queued paste.
+        model.sendUserInput(Data("stale attempt".utf8), attemptID: UUID())
+        writing.release()
+        try await waitUntil { transport.writes.count == 2 }
+        #expect(transport.writes == [Data("in flight".utf8), Data("protocol reply".utf8)])
+        await model.close()
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func typingDuringForegroundValidationWaitsForTheRetainedPTY() async throws {
+        let transport = TestTransport()
+        let model = ConnectionModel(host: host, dependencies: dependencies(transport))
+        await model.connect()
+        let checking = Suspension()
+        transport.checkSuspension = checking
+        defer { checking.release(); Task { await model.close() } }
+        model.enterBackground()
+        model.enterForeground()
+        try await waitUntil { checking.arrived }
+        model.resize(columns: 104, rows: 29)
+        model.sendUserInput(Data("continue\r".utf8), attemptID: model.connectionAttemptID)
+        await Task.yield()
+        #expect(transport.writes.isEmpty)
+        checking.release()
+        try await waitUntil { transport.writes.count == 1 }
+        #expect(model.phase == .connected)
+        #expect(transport.sizes.last == [104, 29])
+        #expect(transport.connectCalls == 1)
+        await model.close()
+    }
 }

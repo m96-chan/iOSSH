@@ -12,7 +12,7 @@ Designed around image display through the Kitty Graphics Protocol and GPU render
 
 The repository now contains an iPhone/iPad app with SwiftData host management, Keychain credentials, SSH PTY sessions, explicit first-use host key approval, reconnect, and a Metal terminal. The terminal uses the planned **SwiftTerm fallback** behind `TerminalEngine`; no libghostty-vt binary is required.
 
-The current iPad build uses the same single-session navigation as iPhone. The dedicated iPad workspace and connection tabs specified in [iPad UI](#ipad-ui-planned) are the next design target; they are not implemented yet.
+The iPad build now includes the dedicated [iPad workspace](#ipad-ui): an adaptive host sidebar, up to four retained connection tabs, and a session menu in narrow windows. iPhone keeps its single-session flow. Physical iPad acceptance and sustained-output profiling remain to be completed.
 
 Implemented authentication: passwords, OpenSSH Ed25519 keys (including supported encrypted keys), unencrypted ECDSA PEM keys, and Tailscale SSH using the connected Tailscale app. Choose **Tailscale SSH** to connect by device name without entering a password or key; check-mode sign-in links appear when requested by the server. The current SSH dependency does not implement keyboard-interactive; RSA is also unavailable. These methods are not offered by the app.
 
@@ -72,7 +72,7 @@ Targets **both iPhone and iPad**, running **iOS / iPadOS 17+** (with Metal 3 and
 
 These are excluded from v1, not ruled out forever. Adding one requires an explicit decision to remove its row from this table.
 
-### iPad UI (planned)
+### iPad UI
 
 The iPad workspace is intended for editing on a remote server, following logs, and moving between machines with a hardware keyboard. Connection tabs are **enabled by default on iPad**. Each tab contains an independent SSH shell; terminal split panes remain outside this iteration.
 
@@ -137,20 +137,21 @@ The final terminal row must remain above the opaque accessory row. Recalculate t
 - Only the selected session presents credentials, host-key approval, or Tailscale sign-in. Other tabs show an attention state. Serialize authentication sheets and label them with the destination. App-owned prompts offer **Later** to leave the request pending and use another tab, and **Cancel** to end that connection attempt. A deferred prompt reopens only through its tab's attention action; authentication deadlines continue while hidden. System biometric dialogs retain their normal OS behavior.
 - Bind authentication responses to the originating session, connection attempt, and request ID; ignore stale callbacks after cancellation, tab closure, or reconnection. Deferring presentation alone must not trigger the current credential sheet's cancellation-on-dismiss behavior.
 - Hidden sessions continue consuming and parsing output. Suspend their GPU drawing, cursor timers, and frequent snapshot publication; publish a current snapshot when selected. Hidden sessions retain their last valid PTY size and receive the measured viewport size on activation before keyboard input resumes.
-- Keep render resources for the visible terminal only, releasing hidden GPU caches. The initial target is an **app-wide 64 MiB decoded Kitty image budget**, retaining the existing **16 MiB per-image limit**, plus the active renderer's bounded glyph atlas. Preserve bounded scrollback per session. Memory pressure may evict image/render caches, but must not silently disconnect SSH or erase terminal text. These are implementation targets; current image limits are per session.
+- Keep render resources for the visible terminal only, releasing hidden GPU caches. The initial target is an **app-wide 64 MiB decoded Kitty image budget**, retaining the existing **16 MiB per-image limit**, plus the active renderer's bounded glyph atlas. Preserve bounded scrollback per session. Memory pressure may evict image/render caches, but must not silently disconnect SSH or erase terminal text. The workspace shares this budget across its sessions; standalone terminal engines retain their own limits.
 
-#### Implementation order
+#### Implementation and validation
 
-1. Move `ConnectionModel` ownership out of `TerminalScreen` into a workspace session store; inject the selected model into the terminal. Verify the existing iPhone flow still works.
-2. Add the adaptive iPad sidebar/detail layout and empty state with one session, including window and keyboard resizing.
-3. Add retained tabs and the compact picker, then session-bound focus, authentication presentation, and workspace shortcuts.
-4. Add hidden-session scheduling and aggregate resource budgets; complete the iPad acceptance checks below before marking this UI implemented.
+- [x] Move `ConnectionModel` ownership into `WorkspaceSessionStore` and inject the selected model into `TerminalScreen`.
+- [x] Add the adaptive iPad sidebar/detail layout, empty state, retained tabs, and compact session picker.
+- [x] Bind input and authentication to each session and connection attempt; add workspace shortcuts.
+- [x] Pause hidden snapshots/rendering and share the decoded-image budget across sessions.
+- [ ] Complete physical iPad acceptance, including multitasking window controls, Magic Keyboard/trackpad, floating keyboard, and sustained-output/memory profiling.
 
 ---
 
 ## 3. Architecture
 
-The diagram shows one session. In the planned iPad workspace, a session store owns an ordered set of `ConnectionModel` instances and the selected session ID. Each model retains its own `SSHSession` and `TerminalEngine`; only the selected model is attached to a visible `TerminalView`. The iPhone flow uses the same ownership model with one session. View disappearance alone must not close a connection.
+The diagram shows one session. In the iPad workspace, a session store owns an ordered set of `ConnectionModel` instances and the selected session ID. Each model retains its own `SSHSession` and `TerminalEngine`; only the selected model is attached to a visible `TerminalView`. The iPhone flow uses the same ownership model with one session. View disappearance alone must not close a connection.
 
 ```
         SwiftUI  (host list / settings / connection flow)
@@ -341,7 +342,7 @@ Define what counts as working before implementation begins.
 ## 12. Roadmap
 
 - **v0.1** — a working baseline with connection / authentication / PTY / CoreText rendering
-- **Next: iPad workspace** — session ownership, adaptive sidebar/detail layout, retained connection tabs, keyboard/pointer support, and resource/acceptance validation
+- **iPad workspace (initial implementation)** — adaptive sidebar/detail layout, retained connection tabs, keyboard/pointer support, and shared resource limits; physical iPad validation is next
 - **v1.0** — Metal renderer, True Color, Kitty Graphics, key management, reconnection, and validated iPhone/iPad UI
 - **v1.1** — Kitty Keyboard Protocol, Secure Enclave keys, additional themes
 

@@ -4,150 +4,232 @@ import SwiftUI
 import TerminalCore
 import TerminalRender
 
+/// The workspace owns the connection; this view only presents the selected session.
 struct TerminalScreen: View {
-    @Environment(\.dismiss) private var dismiss
-    @Environment(\.scenePhase) private var scenePhase
     @AppStorage("terminal.fontSize") private var fontSize: Double = 14
     @AppStorage(TerminalFontLibrary.selectionKey) private var selectedFontName = TerminalFont.postScriptName
     @AppStorage("terminal.theme") private var themeName = "dark"
-    @State private var model: ConnectionModel
-    @State private var showingSettings = false
-    @State private var authenticationPage: AuthenticationPage?
+    let model: ConnectionModel
+    var isWorkspace = false
+    var allowsAuthentication = true
+    var focusRequest: UUID?
+    let onClose: () -> Void
+    var onWorkspaceCommand: (@MainActor (TerminalWorkspaceCommand) -> Void)?
+    @State private var activeSheet: TerminalSheet?
+    @State private var lastSheet: TerminalSheet?
+    @State private var localFocusRequest = UUID()
 
-    init(host: SSHHost) { _model = State(initialValue: ConnectionModel(host: host)) }
     private var theme: TerminalTheme { themeName == "light" ? .light : .dark }
 
     var body: some View {
-        NavigationStack {
-            VStack(spacing: 0) {
-                if model.phase != .connected, model.phase != .checking {
-                    HStack(spacing: 10) {
-                        if model.phase == .connecting { ProgressView().controlSize(.small) }
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(model.phase == .connecting ? "Connecting…" : "Disconnected")
-                                .font(.subheadline.weight(.medium))
-                            if let message = model.message { Text(message).font(.caption).textSelection(.enabled) }
-                        }
-                        Spacer(minLength: 8)
-                        if model.phase != .connecting {
-                            Button("Reconnect") { Task { await model.connect() } }
-                                .font(.subheadline.weight(.semibold))
-                        }
-                    }
-                    .padding(12)
-                    .background(.bar)
+        VStack(spacing: 0) {
+            status
+            if model.phase == .connecting, model.isAuthenticationDeferred, model.needsAuthenticationAttention {
+                HStack {
+                    Label("This session needs your attention", systemImage: "exclamationmark.circle")
+                        .font(.subheadline)
+                    Spacer()
+                    Button("Continue") { model.resumeAuthentication(); presentAuthentication() }
+                        .accessibilityIdentifier("resumeAuthentication")
                 }
-                if model.phase == .connecting, !model.authenticationBanner.isEmpty {
-                    VStack(alignment: .leading, spacing: 8) {
-                        ScrollView {
-                            Text(model.authenticationBanner)
-                                .font(.footnote)
-                                .textSelection(.enabled)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                        .frame(maxHeight: 112)
-                        if let url = model.authenticationURL {
-                            Button("Sign in at \(url.host ?? "Tailscale")", systemImage: "arrow.up.right.square") {
-                                authenticationPage = AuthenticationPage(url: url)
-                            }
-                            .accessibilityIdentifier("tailscaleSignIn")
-                        }
-                    }
-                    .padding(12)
-                    .background(.bar)
-                    .accessibilityIdentifier("authenticationBanner")
-                }
-                TerminalView(snapshot: model.snapshot,
-                             configuration: TerminalConfiguration(
-                                fontSize: fontSize,
-                                fontName: TerminalFontLibrary.shared.resolvedFontName(selectedFontName),
-                                theme: theme),
-                             onInput: { model.send($0) },
-                             onResize: { model.resize(columns: $0, rows: $1) },
-                             onKey: { model.engine.sendKey($0) },
-                             onPaste: { model.engine.paste($0) },
-                             onScroll: { model.engine.scroll(by: $0) },
-                             onCellSize: { model.engine.setCellSize(width: $0, height: $1) },
-                             onCopySelection: { model.engine.text(in: $0) })
-                    .accessibilityIdentifier("terminal")
+                .padding(12).background(.bar)
+            } else if model.phase == .connecting, !model.authenticationBanner.isEmpty {
+                authenticationBanner
             }
-            .navigationTitle(model.phase == .checking ? "Checking connection…" : model.host.name)
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("Close", systemImage: "xmark") {
-                        Task { await model.close(); dismiss() }
-                    }
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Menu {
-                        Button("Appearance", systemImage: "textformat.size") { showingSettings = true }
-                        Button("Scroll to Bottom", systemImage: "arrow.down.to.line") { model.engine.scrollToBottom() }
-                        if model.phase == .connected || model.phase == .checking {
-                            Button("Disconnect", systemImage: "network.slash") { Task { await model.close() } }
-                        } else if model.phase != .connecting, model.host.authentication != .tailscale {
-                            Button("Enter Credentials", systemImage: "key") { Task { await model.connect(enterCredential: true) } }
-                        }
-                    } label: { Label("Terminal options", systemImage: "ellipsis.circle") }
-                }
-            }
-            .sheet(isPresented: $showingSettings) { SettingsView() }
-            .sheet(item: $authenticationPage) { page in
-                AuthenticationBrowser(url: page.url)
-            }
-            .sheet(isPresented: $model.credentialPrompt, onDismiss: { model.credentialSheetDidDismiss() }) {
-                CredentialPromptView(host: model.host) { model.submitCredential($0) }
-            }
-            .alert("Trust this server?", isPresented: Binding(get: { model.trustPrompt != nil }, set: { _ in })) {
-                Button("Cancel", role: .cancel) { model.answerTrust(false) }
-                Button("Trust and Connect") { model.answerTrust(true) }
-            } message: {
-                if let challenge = model.trustPrompt?.challenge {
-                    Text("First connection to \(challenge.hostname):\(challenge.port).\n\n\(challenge.algorithm)\n\(challenge.fingerprint)\n\nCompare this fingerprint with your server administrator before trusting it.")
-                }
-            }
-            .onAppear {
-                model.apply(theme: theme)
-                model.connectOnFirstAppearance()
-            }
-            .onChange(of: themeName) { _, _ in model.apply(theme: theme) }
-            .onChange(of: model.phase) { _, phase in
-                if phase != .connecting { authenticationPage = nil }
-            }
-            .onChange(of: scenePhase) { _, phase in
-                if phase == .background {
-                    model.enterBackground()
-                } else if phase == .active {
-                    model.enterForeground()
-                }
-            }
-            // Sheets and screen lock must not tear down the shell. This full-screen view
-            // is dismissed through Close, which explicitly closes the model first.
-            .interactiveDismissDisabled()
+            surface
         }
+        .navigationTitle(model.phase == .checking ? "Checking connection…" : model.host.name)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            if !isWorkspace {
+                ToolbarItem(placement: .topBarLeading) { Button("Close", systemImage: "xmark", action: onClose) }
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Button("Appearance", systemImage: "textformat.size") { present(.settings) }
+                    Button("Scroll to Bottom", systemImage: "arrow.down.to.line") { model.engine.scrollToBottom() }
+                    if model.phase == .connected || model.phase == .checking {
+                        Button("Disconnect", systemImage: "network.slash") { Task { await model.close() } }
+                    } else if model.phase != .connecting, model.host.authentication != .tailscale {
+                        Button("Enter Credentials", systemImage: "key") { Task { await model.connect(enterCredential: true) } }
+                    }
+                    if isWorkspace { Button("Close Session", systemImage: "xmark", action: onClose) }
+                } label: { Label("Terminal options", systemImage: "ellipsis.circle") }
+                .accessibilityIdentifier("terminalOptions")
+            }
+        }
+        .sheet(item: $activeSheet, onDismiss: sheetDidDismiss) { item in
+            switch item.content {
+            case .settings: SettingsView()
+            case .credential(let connection, let requestID, let attemptID):
+                CredentialPromptView(host: connection.host, later: isWorkspace ? {
+                    connection.deferAuthentication(attemptID: attemptID)
+                    activeSheet = nil
+                } : nil) { answer in
+                    connection.submitCredential(answer, requestID: requestID, attemptID: attemptID)
+                    activeSheet = nil
+                }
+                .interactiveDismissDisabled()
+            case .trust(let connection, let prompt):
+                TrustPromptView(host: connection.host, challenge: prompt.challenge, later: isWorkspace ? {
+                    connection.deferAuthentication(attemptID: prompt.attemptID)
+                    activeSheet = nil
+                } : nil) { trusted in
+                    connection.answerTrust(trusted, requestID: prompt.id, attemptID: prompt.attemptID)
+                    activeSheet = nil
+                }
+                .interactiveDismissDisabled()
+            case .browser(_, _, let url): AuthenticationBrowser(url: url)
+            }
+        }
+        .onAppear { model.apply(theme: theme); model.connectOnFirstAppearance(); presentAuthentication() }
+        .onChange(of: model.id) { _, _ in
+            if let previous = activeSheet { previous.deferAuthentication(); activeSheet = nil }
+            model.apply(theme: theme)
+            localFocusRequest = UUID()
+            presentAuthentication()
+        }
+        .onChange(of: themeName) { _, _ in model.apply(theme: theme) }
+        .onChange(of: model.credentialPrompt) { _, _ in presentAuthentication() }
+        .onChange(of: model.credentialRequestID) { _, _ in presentAuthentication() }
+        .onChange(of: model.trustPrompt?.id) { _, _ in presentAuthentication() }
+        .onChange(of: model.isAuthenticationDeferred) { _, _ in presentAuthentication() }
+        .onChange(of: allowsAuthentication) { _, allowed in
+            if allowed { localFocusRequest = UUID(); presentAuthentication() }
+        }
+        .onChange(of: focusRequest) { _, _ in localFocusRequest = UUID() }
+        .onChange(of: model.phase) { _, phase in
+            if phase != .connecting, activeSheet?.isAuthentication == true { activeSheet = nil }
+        }
+    }
+
+    private var surface: some View {
+        let inputAttempt = model.connectionAttemptID
+        return TerminalView(snapshot: model.snapshot,
+                         configuration: TerminalConfiguration(fontSize: fontSize,
+                            fontName: TerminalFontLibrary.shared.resolvedFontName(selectedFontName), theme: theme),
+                         onInput: { model.sendUserInput($0, attemptID: inputAttempt) },
+                         onResize: { model.resize(columns: $0, rows: $1) },
+                         onKey: { model.sendUserKey($0, attemptID: inputAttempt) },
+                         onPaste: { model.pasteUserInput($0, attemptID: inputAttempt) },
+                         onScroll: { model.engine.scroll(by: $0) },
+                         onCellSize: { model.engine.setCellSize(width: $0, height: $1) },
+                         onCopySelection: { model.engine.text(in: $0) },
+                         inputIdentity: TerminalInputIdentity(sessionID: model.id, attemptID: model.connectionAttemptID),
+                         focusRequest: allowsAuthentication && activeSheet == nil ? localFocusRequest : nil,
+                         onWorkspaceCommand: terminalWorkspaceCommand)
+                .accessibilityIdentifier("terminal")
+    }
+
+    private var terminalWorkspaceCommand: (@MainActor (TerminalWorkspaceCommand) -> Void)? {
+        guard let handler = onWorkspaceCommand else { return nil }
+        return { command in
+            guard activeSheet == nil, lastSheet == nil, allowsAuthentication else { return }
+            handler(command)
+        }
+    }
+
+    @ViewBuilder private var status: some View {
+        if model.phase != .connected, model.phase != .checking {
+            HStack(spacing: 10) {
+                if model.phase == .connecting { ProgressView().controlSize(.small) }
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(model.phase == .connecting ? "Connecting…" : "Disconnected").font(.subheadline.weight(.medium))
+                    if let message = model.message { Text(message).font(.caption).textSelection(.enabled) }
+                }
+                Spacer(minLength: 8)
+                if model.phase != .connecting {
+                    Button("Reconnect") { Task { await model.connect() } }.font(.subheadline.weight(.semibold))
+                } else if model.isAuthenticationDeferred {
+                    Button("Cancel") { Task { await model.close() } }
+                }
+            }
+            .padding(12).background(.bar)
+        }
+    }
+
+    private var authenticationBanner: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ScrollView {
+                Text(model.authenticationBanner).font(.footnote).textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(maxHeight: 112)
+            HStack {
+                if let url = model.authenticationURL {
+                    Button("Sign in at \(url.host ?? "Tailscale")", systemImage: "arrow.up.right.square") {
+                        present(.browser(model, model.connectionAttemptID, url))
+                    }
+                    .accessibilityIdentifier("tailscaleSignIn")
+                }
+                Spacer()
+                if isWorkspace {
+                    Button("Later") { model.deferAuthentication(attemptID: model.connectionAttemptID) }
+                }
+                Button("Cancel") { Task { await model.close() } }
+            }
+        }
+        .padding(12).background(.bar).accessibilityIdentifier("authenticationBanner")
+    }
+
+    private func present(_ content: TerminalSheet.Content) {
+        guard activeSheet == nil, lastSheet == nil, allowsAuthentication else { return }
+        let item = TerminalSheet(content: content)
+        lastSheet = item
+        activeSheet = item
+    }
+
+    private func presentAuthentication() {
+        guard model.isVisible, !model.isAuthenticationDeferred, model.phase == .connecting else { return }
+        if model.credentialPrompt, let requestID = model.credentialRequestID {
+            present(.credential(model, requestID, model.connectionAttemptID))
+        } else if let prompt = model.trustPrompt {
+            present(.trust(model, prompt))
+        }
+    }
+
+    private func sheetDidDismiss() {
+        if case .credential(let connection, let requestID, let attemptID) = lastSheet?.content {
+            connection.credentialSheetDidDismiss(requestID: requestID, attemptID: attemptID)
+        }
+        lastSheet = nil
+        localFocusRequest = UUID()
+        presentAuthentication()
     }
 }
 
-private struct AuthenticationPage: Identifiable {
-    let url: URL
-    var id: String { url.absoluteString }
+private struct TerminalSheet: Identifiable {
+    enum Content {
+        case settings
+        case credential(ConnectionModel, UUID, UUID)
+        case trust(ConnectionModel, ConnectionModel.TrustPrompt)
+        case browser(ConnectionModel, UUID, URL)
+    }
+    let id = UUID()
+    let content: Content
+    var isAuthentication: Bool { if case .settings = content { false } else { true } }
+
+    @MainActor func deferAuthentication() {
+        switch content {
+        case .credential(let connection, _, let attempt), .browser(let connection, let attempt, _):
+            connection.deferAuthentication(attemptID: attempt)
+        case .trust(let connection, let prompt): connection.deferAuthentication(attemptID: prompt.attemptID)
+        case .settings: break
+        }
+    }
 }
 
 private struct AuthenticationBrowser: UIViewControllerRepresentable {
     @Environment(\.dismiss) private var dismiss
     let url: URL
-
     func makeCoordinator() -> Coordinator { Coordinator(dismiss: dismiss) }
-
     func makeUIViewController(context: Context) -> SFSafariViewController {
         let browser = SFSafariViewController(url: url)
         browser.dismissButtonStyle = .done
         browser.delegate = context.coordinator
         return browser
     }
-
     func updateUIViewController(_ browser: SFSafariViewController, context: Context) {}
-
     @MainActor final class Coordinator: NSObject, SFSafariViewControllerDelegate {
         let dismiss: DismissAction
         init(dismiss: DismissAction) { self.dismiss = dismiss }
@@ -157,8 +239,36 @@ private struct AuthenticationBrowser: UIViewControllerRepresentable {
     }
 }
 
+private struct TrustPromptView: View {
+    let host: SSHHost
+    let challenge: HostKeyChallenge
+    let later: (() -> Void)?
+    let answer: (Bool) -> Void
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Connect to \(host.name)") {
+                    Text("\(challenge.hostname):\(challenge.port)")
+                    Text(challenge.algorithm)
+                    Text(challenge.fingerprint).font(.callout.monospaced()).textSelection(.enabled)
+                }
+                Section {
+                    Text("First connection to this server. Compare this fingerprint with your server administrator before trusting it.")
+                    Button("Trust and Connect") { answer(true) }
+                    if let later { Button("Later", action: later) }
+                }
+            }
+            .navigationTitle("Trust this server?").navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { answer(false) } }
+            }
+        }
+    }
+}
+
 private struct CredentialPromptView: View {
     let host: SSHHost
+    let later: (() -> Void)?
     let answer: (ConnectionModel.CredentialAnswer?) -> Void
     @State private var password = ""
     @State private var key = ""
@@ -171,8 +281,7 @@ private struct CredentialPromptView: View {
                 Section { Text("\(host.username)@\(host.hostname)").font(.subheadline.monospaced()) }
                 Section("Credential") {
                     if host.authentication == .privateKey {
-                        TextEditor(text: $key)
-                            .font(.system(.caption, design: .monospaced)).frame(minHeight: 160)
+                        TextEditor(text: $key).font(.system(.caption, design: .monospaced)).frame(minHeight: 160)
                             .accessibilityLabel("Private key").privacySensitive()
                         SecureField("Key passphrase (if required)", text: $passphrase)
                     } else {
@@ -180,12 +289,16 @@ private struct CredentialPromptView: View {
                     }
                 }
                 .autocorrectionDisabled().textInputAutocapitalization(.never)
-                Section {
-                    Toggle("Save in Keychain", isOn: $save)
-                } footer: { Text("Saved credentials require Face ID or Touch ID and remain on this device.") }
+                Section { Toggle("Save in Keychain", isOn: $save) } footer: {
+                    Text("Saved credentials require Face ID or Touch ID and remain on this device.")
+                }
+                if let later {
+                    Section { Button("Later", action: later).accessibilityIdentifier("deferAuthentication") } footer: {
+                        Text("Keep this request pending while you use another session.")
+                    }
+                }
             }
-            .navigationTitle("Connect to \(host.name)")
-            .navigationBarTitleDisplayMode(.inline)
+            .navigationTitle("Connect to \(host.name)").navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { answer(nil) } }
                 ToolbarItem(placement: .confirmationAction) {

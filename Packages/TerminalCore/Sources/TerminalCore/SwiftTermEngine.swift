@@ -5,6 +5,7 @@ import Foundation
 @MainActor public final class SwiftTermEngine: TerminalEngine, @preconcurrency TerminalDelegate {
     public var onOutput: ((Data) -> Void)?
     public var onNeedsDisplay: (() -> Void)?
+    public var onImageCacheInvalidated: (() -> Void)?
     public var onTitleChange: ((String) -> Void)?
     public var columns: Int { terminal.cols }
     public var rows: Int { terminal.rows }
@@ -30,14 +31,21 @@ import Foundation
     private var configuredPalette: [TerminalColor] = []
 
     public init(columns: Int = 80, rows: Int = 24, scrollback: Int = 10_000,
-                imageLimits: TerminalImageLimits = .default) {
-        graphics = KittyGraphicsStore(limits: imageLimits)
+                imageLimits: TerminalImageLimits = .default,
+                imageBudget: TerminalImageBudget? = nil) {
+        graphics = KittyGraphicsStore(limits: imageLimits, budget: imageBudget)
         terminal = Terminal(delegate: self, options: TerminalOptions(
             cols: min(1000, max(2, columns)), rows: min(1000, max(1, rows)),
             termName: "xterm-256color", scrollback: min(100_000, max(0, scrollback)),
             enableSixelReported: false))
         setColors(foreground: .foreground, background: .background,
                   palette: SwiftTerm.Color.xtermColors.map(Self.color))
+        graphics.onImagesInvalidated = { [weak self] in
+            guard let self else { return }
+            self.previous = nil
+            self.onImageCacheInvalidated?()
+            self.changed()
+        }
     }
 
     public func feed(_ data: Data) {

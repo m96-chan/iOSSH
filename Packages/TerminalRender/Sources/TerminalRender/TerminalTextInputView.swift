@@ -15,6 +15,7 @@ final class TerminalTextInputView: UITextView, UITextViewDelegate {
     var onTerminalPaste: (() -> Void)?
     var onTerminalSelectAll: (() -> Void)?
     var terminalCanCopy: (() -> Bool)?
+    var onWorkspaceCommand: ((TerminalWorkspaceCommand) -> Void)?
 
     private var editDepth = 0
     private var compositionActive = false
@@ -217,7 +218,34 @@ final class TerminalTextInputView: UITextView, UITextViewDelegate {
         if hasComposition { super.selectAll(sender) } else { onTerminalSelectAll?() }
     }
 
+    override var keyCommands: [UIKeyCommand]? {
+        var commands = super.keyCommands ?? []
+        guard onWorkspaceCommand != nil else { return commands }
+        let definitions: [(String, UIKeyModifierFlags, String)] = [
+            ("t", .command, "New Session"), ("w", .command, "Close Session"),
+            ("[", [.command, .shift], "Previous Session"),
+            ("]", [.command, .shift], "Next Session"),
+            ("1", .command, "Session 1"), ("2", .command, "Session 2"),
+            ("3", .command, "Session 3"), ("4", .command, "Session 4"),
+            (",", .command, "Settings")
+        ]
+        commands += definitions.map { input, modifiers, title in
+            let command = UIKeyCommand(input: input, modifierFlags: modifiers, action: #selector(performWorkspaceCommand(_:)))
+            command.discoverabilityTitle = title
+            command.wantsPriorityOverSystemBehavior = true
+            return command
+        }
+        return commands
+    }
+
+    @objc func performWorkspaceCommand(_ sender: UIKeyCommand) {
+        guard isFirstResponder,
+              let command = TerminalWorkspaceCommand.from(input: sender.input, modifiers: sender.modifierFlags) else { return }
+        onWorkspaceCommand?(command)
+    }
+
     override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
+        if action == #selector(performWorkspaceCommand(_:)) { return onWorkspaceCommand != nil && isFirstResponder }
         if hasComposition { return super.canPerformAction(action, withSender: sender) }
         if action == #selector(copy(_:)) { return terminalCanCopy?() == true }
         if action == #selector(paste(_:)) { return UIPasteboard.general.hasStrings }
@@ -322,10 +350,55 @@ enum TerminalTextInputRange {
 }
 
 enum TerminalTextInputLayout {
-    static func frame(cursor: CGRect, viewport: CGRect, preferredSize: CGSize) -> CGRect {
+    static func frame(cursor: CGRect, viewport: CGRect, preferredSize: CGSize, avoiding occlusion: CGRect? = nil) -> CGRect {
         let width = min(viewport.width, max(cursor.width, preferredSize.width))
         let height = min(viewport.height, max(cursor.height, preferredSize.height))
-        return CGRect(x: max(viewport.minX, min(cursor.minX, viewport.maxX - width)),
-                      y: max(viewport.minY, min(cursor.minY, viewport.maxY - height)), width: width, height: height)
+        func fit(in area: CGRect) -> CGRect {
+            let width = min(width, area.width)
+            let height = min(height, area.height)
+            return CGRect(x: max(area.minX, min(cursor.minX, area.maxX - width)),
+                          y: max(area.minY, min(cursor.minY, area.maxY - height)), width: width, height: height)
+        }
+        let normal = fit(in: viewport)
+        guard let occlusion, normal.intersects(occlusion) else { return normal }
+        let blocked = occlusion.intersection(viewport)
+        guard !blocked.isNull, !blocked.isEmpty else { return normal }
+        // A floating keyboard only occludes a local rectangle. Move the native
+        // conversion/caret anchor into the nearest clear region, leaving the PTY
+        // dimensions and all terminal rows unchanged.
+        let regions = [
+            CGRect(x: viewport.minX, y: viewport.minY, width: viewport.width, height: blocked.minY - viewport.minY),
+            CGRect(x: viewport.minX, y: blocked.maxY, width: viewport.width, height: viewport.maxY - blocked.maxY),
+            CGRect(x: viewport.minX, y: viewport.minY, width: blocked.minX - viewport.minX, height: viewport.height),
+            CGRect(x: blocked.maxX, y: viewport.minY, width: viewport.maxX - blocked.maxX, height: viewport.height)
+        ].filter { $0.width >= cursor.width && $0.height >= cursor.height }
+        let fullSize = regions.filter { $0.width >= width && $0.height >= height }
+        let candidates = (fullSize.isEmpty ? regions : fullSize).map(fit)
+        return candidates.min {
+            hypot($0.minX - normal.minX, $0.minY - normal.minY) < hypot($1.minX - normal.minX, $1.minY - normal.minY)
+        } ?? normal
+    }
+}
+
+extension TerminalWorkspaceCommand {
+    static func from(input: String?, modifiers: UIKeyModifierFlags) -> Self? {
+        // Ignore Caps Lock, but never consume shell Control/Option combinations.
+        let modifiers = modifiers.intersection([.command, .shift, .control, .alternate])
+        if modifiers == [.command, .shift] {
+            if input == "[" || input == "{" { return .previousSession }
+            if input == "]" || input == "}" { return .nextSession }
+            return nil
+        }
+        guard modifiers == .command else { return nil }
+        switch input?.lowercased() {
+        case "t": return .newSession
+        case "w": return .closeSession
+        case ",": return .settings
+        case "1": return .selectSession(0)
+        case "2": return .selectSession(1)
+        case "3": return .selectSession(2)
+        case "4": return .selectSession(3)
+        default: return nil
+        }
     }
 }

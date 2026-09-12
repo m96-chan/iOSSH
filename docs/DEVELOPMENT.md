@@ -60,6 +60,20 @@ First use shows the server's SHA-256 host-key fingerprint. Compare it through a 
 
 Screen lock and backgrounding retain the SSH session, terminal buffer, and cursor. Returning checks the existing connection and reapplies its current terminal size without authenticating again or opening another shell. Explicit Close/Disconnect still closes the connection. If the peer has closed or no longer responds, the app offers Reconnect; that opens a fresh authenticated shell with host-key verification and cannot recover a shell the server ended. iOS can suspend the app, so retaining a session does not guarantee indefinite background networking. See [Apple's background execution guidance](https://developer.apple.com/documentation/uikit/extending-your-app-s-background-execution-time).
 
+## iPad workspace
+
+On iPad, select a saved host in the sidebar to open or return to its most recently used session. The tab-strip **+**, **Command-T**, or a host's **New Session** context-menu action opens an independent shell, including another connection to the same host. Up to four tabs can stay open, including disconnected tabs. Closing one tab ends only that shell; a disconnected tab keeps its output until explicitly reconnected or closed.
+
+Hide the sidebar to expand the terminal. Below 700 points of window width, Hosts and Sessions toolbar menus replace the sidebar and tab strip. The Sessions menu can select or close each tab. Resizing preserves every connection and its terminal state. iPhone keeps one full-screen session using the same session owner.
+
+**Later** leaves an authentication request pending so another tab can be used; choose **Continue** in the original tab to reopen it. **Cancel** ends that attempt. Host-key and credential replies are bound to the original session, connection attempt, and request. A hidden tab never opens a new authentication sheet automatically.
+
+Hardware shortcuts include **Command-W** to close, **Command-Shift-[ / ]** to switch, **Command-1…4** to select by position, and **Command-,** for Settings. Commands apply while the terminal has focus; ordinary editing shortcuts remain available in text fields. Switching sessions cancels unconfirmed Japanese text and transient Ctrl state. An asynchronous paste is discarded if its session or connection attempt changes before delivery; it is never sent to another tab. PTY resize requests precede subsequent user input.
+
+Only the selected terminal renders. Hidden sessions still parse output, keep bounded history, and receive foreground connection checks. All workspace sessions share a 64 MiB decoded Kitty-image cache with a 16 MiB per-image limit; memory warnings release cached images without closing SSH or deleting terminal text.
+
+Run `make test-ui SIMULATOR='iPad Pro 11-inch (M5)'` using an installed iPad simulator. `iPadWorkspaceUITests` covers retained tabs, deferred authentication, duplicate hosts, the tab limit, closing, sidebar changes, and keyboard geometry. `WorkspaceLayoutTests` hosts the real adaptive UI at wide, narrow, and portrait dimensions with deterministic transports; it verifies native renderer ownership and PTY sizes without reconnecting. iPad-only tests skip on iPhone. Physical iPad testing remains necessary for window controls, Magic Keyboard/trackpad, floating keyboard interaction, and sustained-output performance.
+
 ## Terminal
 
 Tap the terminal to show the keyboard. The accessory row includes Ctrl, Esc, Tab, arrows, pipe, and tilde. Hardware modifiers, application cursor keys, and bracketed paste are handled. Swipe vertically for history. Long press and drag to select; use the edit menu or Command-C/Command-V to copy/paste. Settings change the font size and dark/light palette.
@@ -101,6 +115,7 @@ Use a disposable test key and account. The test checks PTY output, remote `stty`
 On 2026-09-12, with Xcode 26.5 / Swift 6.3.2:
 
 - iOS Simulator app build succeeded (iPhone and iPad target families).
+- Version 0.1.0 build 5 adds the iPad workspace. The 75 app/render tests passed on both iPad Pro 11-inch (M5) and iPhone 17 simulators. The native iPad window test passed at wide, narrow, and portrait dimensions, preserving three shells and one active renderer. Both new iPad UI flows and all five existing iPhone UI tests passed, including actual Japanese Kana candidate selection and confirmation. The shared-image-budget update passed all 26 TerminalCore tests. Build 5 has not yet been installed on a physical iPad; window controls, hardware input, and sustained-output profiling remain pending.
 - A Personal Team signed Debug build passed signature validation, installed, and launched on iPhone 17e / iOS 26.6.1 after trusting the developer certificate. The user confirmed a successful connection to a Tailscale SSH server with the initial build.
 - Version 0.1.0 build 3 passed signature, Personal Team profile, and bundled HackGen Regular/Bold checksum checks, then installed on the same iPhone over Wi-Fi. After the user unlocked the screen, the updated app launched successfully. The user confirmed Japanese input works on this build. The user's Starship theme, screen-lock session resumption, and Tailscale check-mode flow still need physical-device confirmation.
 - Version 0.1.0 build 4 passed signature and bundled HackGen/Noto font checksum checks, installed over Wi-Fi, and launched on the same iPhone. The right-half white-background issue was reproduced in GPU output before the fix; after the fix, the full rendered frame matches the independent reference within 1 RGB level. Physical confirmation with the user's server output remains pending.

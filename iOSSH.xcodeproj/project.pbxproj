@@ -8,11 +8,14 @@
 
 /* Begin PBXBuildFile section */
 		09B00D9624EEB48DCF1CED77 /* ConnectionModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC618C3030669A58E650FC53 /* ConnectionModelTests.swift */; };
+		0A37B46631C09EB022B91999 /* WorkspaceSessionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C9A6999274AAB9CA7E0E5DF /* WorkspaceSessionStore.swift */; };
 		280E96841D6B5FB2DA1950EA /* TerminalRender in Frameworks */ = {isa = PBXBuildFile; productRef = 0130968861023AF2207E184C /* TerminalRender */; };
 		375F741B0F46FCFBDD506F79 /* TerminalViewportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11265FA4D2A5C381E689173 /* TerminalViewportTests.swift */; };
+		407DB701B5407F8FC90DAD8E /* WorkspaceSessionStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37332A336F0E66A67B9D04C1 /* WorkspaceSessionStoreTests.swift */; };
 		452F0962A60927EC0305DFA4 /* TerminalCore in Frameworks */ = {isa = PBXBuildFile; productRef = 4E52DB1E4E668CA302F66D9C /* TerminalCore */; };
 		55459D363C125EAF131E7468 /* TerminalFontLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E7DD19FF9DCC45E75A2F9D9 /* TerminalFontLibrary.swift */; };
 		56871077B21118045B3150B3 /* iOSSHApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A820ABD787EFF5FD17D36CD0 /* iOSSHApp.swift */; };
+		62771FFD9ACCA67D5D9B5D86 /* iPadWorkspaceUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D1E0C43310C3EB044EB52DB /* iPadWorkspaceUITests.swift */; };
 		706F45A9C7157D1CA3EA654C /* ConnectionModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE7715EA1A26DB00BC41EB0C /* ConnectionModel.swift */; };
 		8D2E35E605963429BD612C59 /* TerminalScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7188BD088FE6300D2A9269FB /* TerminalScreen.swift */; };
 		903CE9BF45D214388BF6D148 /* iOSSHUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0660D09E764518561AAAB9CE /* iOSSHUITests.swift */; };
@@ -22,6 +25,7 @@
 		B3F89ED2F0A6C38B69BAFC31 /* HostEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E782EE91A91CF8D57B4C2647 /* HostEditorView.swift */; };
 		BA6AECCD800D72CE129DC4E4 /* TerminalFontTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B77019520186EBCCB9A49939 /* TerminalFontTests.swift */; };
 		BE99510FCB268470B6D7B28F /* TailscaleAuthentication.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0FFC2F0CD866D558B0ED0BBC /* TailscaleAuthentication.swift */; };
+		C751C5F514747A2B374CE4F1 /* WorkspaceLayoutTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD652AE272B9A63048557543 /* WorkspaceLayoutTests.swift */; };
 		C7969DFDF165C28DBB2963D6 /* TerminalFontLibraryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CB0BC27787CF8C4490CD014 /* TerminalFontLibraryTests.swift */; };
 		D18D09E95C6FB0D022EE139E /* TerminalInputTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3481CB020510DBA908C3300 /* TerminalInputTests.swift */; };
 		E91839CE51901FE6F41107AE /* TerminalOutputTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79832E5C775352D87B6AA169 /* TerminalOutputTests.swift */; };
@@ -50,10 +54,13 @@
 		0FFC2F0CD866D558B0ED0BBC /* TailscaleAuthentication.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TailscaleAuthentication.swift; sourceTree = "<group>"; };
 		1E7DD19FF9DCC45E75A2F9D9 /* TerminalFontLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalFontLibrary.swift; sourceTree = "<group>"; };
 		2EA31AA44F8518AA368AF766 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		37332A336F0E66A67B9D04C1 /* WorkspaceSessionStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceSessionStoreTests.swift; sourceTree = "<group>"; };
 		39B02CC9A8E0EC4194268803 /* iOSSHUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = iOSSHUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		3CE3DBF767613DEA56210592 /* HostListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostListView.swift; sourceTree = "<group>"; };
 		4916B8C433035DB9827E8DF6 /* SSHCore */ = {isa = PBXFileReference; lastKnownFileType = folder; name = SSHCore; path = Packages/SSHCore; sourceTree = SOURCE_ROOT; };
 		6582940BDC26ABD3D4A5ECC0 /* iOSSH.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = iOSSH.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		6C9A6999274AAB9CA7E0E5DF /* WorkspaceSessionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceSessionStore.swift; sourceTree = "<group>"; };
+		6D1E0C43310C3EB044EB52DB /* iPadWorkspaceUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = iPadWorkspaceUITests.swift; sourceTree = "<group>"; };
 		7188BD088FE6300D2A9269FB /* TerminalScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalScreen.swift; sourceTree = "<group>"; };
 		731526C7B108797D5F45E403 /* HostRecord.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostRecord.swift; sourceTree = "<group>"; };
 		79832E5C775352D87B6AA169 /* TerminalOutputTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalOutputTests.swift; sourceTree = "<group>"; };
@@ -62,6 +69,7 @@
 		A65499EC7081306038E361E1 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		A820ABD787EFF5FD17D36CD0 /* iOSSHApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = iOSSHApp.swift; sourceTree = "<group>"; };
 		B77019520186EBCCB9A49939 /* TerminalFontTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalFontTests.swift; sourceTree = "<group>"; };
+		BD652AE272B9A63048557543 /* WorkspaceLayoutTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceLayoutTests.swift; sourceTree = "<group>"; };
 		C11265FA4D2A5C381E689173 /* TerminalViewportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalViewportTests.swift; sourceTree = "<group>"; };
 		C3481CB020510DBA908C3300 /* TerminalInputTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalInputTests.swift; sourceTree = "<group>"; };
 		DDCDC6BD4F31DC56C1FB8334 /* iOSSHTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = iOSSHTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -99,6 +107,7 @@
 			isa = PBXGroup;
 			children = (
 				0660D09E764518561AAAB9CE /* iOSSHUITests.swift */,
+				6D1E0C43310C3EB044EB52DB /* iPadWorkspaceUITests.swift */,
 			);
 			path = UITests;
 			sourceTree = "<group>";
@@ -112,6 +121,8 @@
 				C3481CB020510DBA908C3300 /* TerminalInputTests.swift */,
 				79832E5C775352D87B6AA169 /* TerminalOutputTests.swift */,
 				C11265FA4D2A5C381E689173 /* TerminalViewportTests.swift */,
+				BD652AE272B9A63048557543 /* WorkspaceLayoutTests.swift */,
+				37332A336F0E66A67B9D04C1 /* WorkspaceSessionStoreTests.swift */,
 			);
 			path = AppTests;
 			sourceTree = "<group>";
@@ -150,6 +161,7 @@
 				0FFC2F0CD866D558B0ED0BBC /* TailscaleAuthentication.swift */,
 				1E7DD19FF9DCC45E75A2F9D9 /* TerminalFontLibrary.swift */,
 				7188BD088FE6300D2A9269FB /* TerminalScreen.swift */,
+				6C9A6999274AAB9CA7E0E5DF /* WorkspaceSessionStore.swift */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -267,6 +279,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				903CE9BF45D214388BF6D148 /* iOSSHUITests.swift in Sources */,
+				62771FFD9ACCA67D5D9B5D86 /* iPadWorkspaceUITests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -280,6 +293,8 @@
 				D18D09E95C6FB0D022EE139E /* TerminalInputTests.swift in Sources */,
 				E91839CE51901FE6F41107AE /* TerminalOutputTests.swift in Sources */,
 				375F741B0F46FCFBDD506F79 /* TerminalViewportTests.swift in Sources */,
+				C751C5F514747A2B374CE4F1 /* WorkspaceLayoutTests.swift in Sources */,
+				407DB701B5407F8FC90DAD8E /* WorkspaceSessionStoreTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -295,6 +310,7 @@
 				BE99510FCB268470B6D7B28F /* TailscaleAuthentication.swift in Sources */,
 				55459D363C125EAF131E7468 /* TerminalFontLibrary.swift in Sources */,
 				8D2E35E605963429BD612C59 /* TerminalScreen.swift in Sources */,
+				0A37B46631C09EB022B91999 /* WorkspaceSessionStore.swift in Sources */,
 				56871077B21118045B3150B3 /* iOSSHApp.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -412,7 +428,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				CURRENT_PROJECT_VERSION = 4;
+				CURRENT_PROJECT_VERSION = 5;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = App/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -466,7 +482,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				CURRENT_PROJECT_VERSION = 4;
+				CURRENT_PROJECT_VERSION = 5;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = App/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (

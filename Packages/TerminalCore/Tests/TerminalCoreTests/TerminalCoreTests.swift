@@ -206,6 +206,141 @@ import ImageIO
         #expect(engine.snapshot()[0, 0].text == "O")
     }
 
+    @Test func sharedImageBudgetEvictsOtherSessionAndInvalidatesRetainedFrames() {
+        let budget = TerminalImageBudget(maximumTotalBytes: 8)
+        let first = SwiftTermEngine(columns: 12, rows: 3, imageBudget: budget)
+        let second = SwiftTermEngine(columns: 12, rows: 3, imageBudget: budget)
+        let red = Data([255, 0, 0, 255]), blue = Data([0, 0, 255, 255])
+        first.feed(Data("first".utf8))
+        second.feed(Data("second".utf8))
+        first.feed(kitty("a=T,f=32,s=1,v=1,i=1,C=1", red))
+        second.feed(kitty("a=T,f=32,s=1,v=1,i=1,C=1", blue))
+        #expect(budget.totalBytes == 8)
+
+        // Simulate a hidden session retaining its last frame without taking new
+        // snapshots. Eviction must synchronously tell it to release that frame.
+        var hiddenFrame: TerminalSnapshot? = first.snapshot()
+        let oldRevision = hiddenFrame?.revision ?? 0
+        var displayInvalidations = 0
+        first.onImageCacheInvalidated = { hiddenFrame = nil }
+        first.onNeedsDisplay = { displayInvalidations += 1 }
+        second.feed(kitty("a=T,f=32,s=1,v=1,i=2,C=1", blue))
+        #expect(hiddenFrame == nil)
+        #expect(displayInvalidations == 1)
+        #expect(budget.totalBytes == 8)
+        let firstScreen = first.snapshot()
+        #expect(firstScreen.images.isEmpty)
+        #expect(firstScreen.revision > oldRevision)
+        #expect(firstScreen.damageRows == Set(0..<3))
+        #expect(firstScreen[0, 0].text == "f")
+        #expect(Set(second.snapshot().images.map(\.id)) == [1, 2])
+        #expect(second.snapshot()[0, 0].text == "s")
+
+        // Identical remote image IDs belong to different sessions. Deleting one
+        // store's image cannot remove the other store's remaining resources.
+        first.feed(kitty("a=d,d=I,i=1"))
+        #expect(budget.totalBytes == 8)
+        second.feed(kitty("a=d,d=I,i=1"))
+        #expect(budget.totalBytes == 4)
+        #expect(second.snapshot().images.map(\.id) == [2])
+    }
+
+    @Test func sharedImageBudgetUsesPlacementRecencyAcrossSessions() {
+        let budget = TerminalImageBudget(maximumTotalBytes: 8)
+        let first = SwiftTermEngine(columns: 12, rows: 3, imageBudget: budget)
+        let second = SwiftTermEngine(columns: 12, rows: 3, imageBudget: budget)
+        let pixel = Data([1, 2, 3, 255])
+        first.feed(kitty("a=T,f=32,s=1,v=1,i=1,p=1,C=1", pixel))
+        second.feed(kitty("a=T,f=32,s=1,v=1,i=1,p=1,C=1", pixel))
+        first.feed(kitty("a=p,i=1,p=1,C=1"))
+        second.feed(kitty("a=T,f=32,s=1,v=1,i=2,p=2,C=1", pixel))
+        #expect(first.snapshot().images.map(\.id) == [1])
+        #expect(second.snapshot().images.map(\.id) == [2])
+        #expect(budget.totalBytes == 8)
+    }
+
+    @Test func sharedImageBudgetAccountsForReplacementResetAndClosedSessions() {
+        let budget = TerminalImageBudget(maximumTotalBytes: 8)
+        var first: SwiftTermEngine? = SwiftTermEngine(columns: 12, rows: 3, imageBudget: budget)
+        weak let releasedEngine = first
+        let second = SwiftTermEngine(columns: 12, rows: 3, imageBudget: budget)
+        let pixel = Data([1, 2, 3, 255])
+        first?.feed(kitty("a=T,f=32,s=1,v=1,i=1,C=1", pixel))
+        second.feed(kitty("a=T,f=32,s=1,v=1,i=1,C=1", pixel))
+        first?.feed(kitty("a=T,f=32,s=2,v=1,i=1,C=1", pixel + pixel))
+        #expect(budget.totalBytes == 8)
+        #expect(first?.snapshot().images.first?.rgba.count == 8)
+        #expect(second.snapshot().images.isEmpty)
+
+        // A transfer exceeding the aggregate budget does not discard a valid
+        // existing image with the same ID or evict another session's images.
+        var response = Data()
+        first?.onOutput = { response.append($0) }
+        first?.feed(kitty("a=T,f=32,s=3,v=1,i=1,C=1", pixel + pixel + pixel))
+        #expect(String(decoding: response, as: UTF8.self).contains("E2BIG"))
+        #expect(first?.snapshot().images.first?.rgba.count == 8)
+        #expect(budget.totalBytes == 8)
+        first?.reset()
+        #expect(budget.totalBytes == 0)
+
+        first?.feed(kitty("a=T,f=32,s=1,v=1,i=1,C=1", pixel))
+        _ = first?.snapshot() // The engine also retains a previous frame.
+        first = nil
+        #expect(releasedEngine == nil)
+        #expect(budget.totalBytes == 0)
+        second.feed(kitty("a=T,f=32,s=2,v=1,i=2,C=1", pixel + pixel))
+        #expect(budget.totalBytes == 8)
+    }
+
+    @Test func sharedImageMemoryPressureClearPreservesTerminalTextAndNotifiesEverySession() {
+        let budget = TerminalImageBudget(maximumTotalBytes: 16)
+        let engines = (0..<4).map { _ in SwiftTermEngine(columns: 12, rows: 3, imageBudget: budget) }
+        var invalidated = Set<Int>()
+        for (index, engine) in engines.enumerated() {
+            engine.feed(Data("session \(index)".utf8))
+            engine.feed(kitty("a=T,f=32,s=1,v=1,i=1,C=1", Data([0, 0, 0, 255])))
+            _ = engine.snapshot()
+            engine.onImageCacheInvalidated = { invalidated.insert(index) }
+        }
+        #expect(budget.totalBytes == 16)
+        budget.removeAll()
+        #expect(budget.totalBytes == 0)
+        #expect(invalidated == Set(0..<4))
+        for (index, engine) in engines.enumerated() {
+            let screen = engine.snapshot()
+            #expect(screen.images.isEmpty)
+            #expect(screen.cells.prefix(9).map(\.text).joined() == "session \(index)")
+        }
+        budget.removeAll()
+        #expect(budget.totalBytes == 0)
+    }
+
+    @Test func sharedImageBudgetHonorsPerSessionLimitsAndPlacementOnlyDeletion() {
+        let budget = TerminalImageBudget(maximumTotalBytes: 16)
+        let limited = SwiftTermEngine(columns: 12, rows: 3,
+                                      imageLimits: .init(maximumImages: 1), imageBudget: budget)
+        let other = SwiftTermEngine(columns: 12, rows: 3, imageBudget: budget)
+        let pixel = Data([0, 0, 0, 255])
+        other.feed(kitty("a=T,f=32,s=1,v=1,i=1,C=1", pixel))
+        limited.feed(kitty("a=T,f=32,s=1,v=1,i=1,C=1", pixel))
+        limited.feed(kitty("a=T,f=32,s=1,v=1,i=2,C=1", pixel))
+        #expect(budget.totalBytes == 8)
+        #expect(limited.snapshot().images.map(\.id) == [2])
+        #expect(other.snapshot().images.map(\.id) == [1])
+
+        // Lowercase Kitty deletion releases placements but keeps decoded data
+        // available for redisplay. Uppercase deletion releases the data too.
+        limited.feed(kitty("a=d,d=i,i=2"))
+        #expect(limited.snapshot().images.isEmpty)
+        #expect(budget.totalBytes == 8)
+        limited.feed(kitty("a=p,i=2,C=1"))
+        #expect(limited.snapshot().images.map(\.id) == [2])
+        limited.feed(kitty("a=d,d=I,i=2"))
+        #expect(budget.totalBytes == 4)
+        other.reset()
+        #expect(budget.totalBytes == 0)
+    }
+
     @Test func kittyRejectsFilesystemAndRelativeRequests() {
         let engine = SwiftTermEngine(columns: 12, rows: 3)
         var output = Data()

@@ -42,6 +42,8 @@ struct KittyGraphicsContext {
         var bytes: Data
     }
     private let limits: TerminalImageLimits
+    private let budget: TerminalImageBudget?
+    var onImagesInvalidated: (() -> Void)?
     private var images: [UInt32: Image] = [:]
     private var imageNumbers: [UInt32: UInt32] = [:]
     private var placements: [Placement] = []
@@ -51,8 +53,19 @@ struct KittyGraphicsContext {
     private var sequence: UInt32 = 0
     private var tick: UInt64 = 0
 
-    init(limits: TerminalImageLimits) { self.limits = limits }
-    func reset() { images.removeAll(); imageNumbers.removeAll(); placements.removeAll(); pending = nil; totalBytes = 0; discardContinuation = false }
+    init(limits: TerminalImageLimits, budget: TerminalImageBudget? = nil) {
+        self.limits = limits
+        self.budget = budget
+    }
+    func reset() {
+        let hadImages = !images.isEmpty
+        budget?.releaseAll(owner: self)
+        images.removeAll(); imageNumbers.removeAll(); placements.removeAll(); pending = nil; totalBytes = 0; discardContinuation = false
+        if hadImages { onImagesInvalidated?() }
+    }
+
+    /// The shared budget already removed its entry before notifying this store.
+    func evictImage(_ id: UInt32) { removeImage(id) }
     func clearPlacements() { placements.removeAll { !$0.virtual } }
     func clearAlternatePlacements() { placements.removeAll { $0.alternate && !$0.virtual } }
     func scrollRegion(top: Int, bottom: Int, context: KittyGraphicsContext) {
@@ -118,12 +131,18 @@ struct KittyGraphicsContext {
         if transfer.control["a"] == "q" { respond(transfer.control, "OK", output); return }
         let id = uint(transfer.control, "i") ?? nextID()
         guard id != 0 else { respond(transfer.control, "EINVAL: image id must be nonzero", output); return }
+        guard image.data.count <= limits.maximumTotalBytes,
+              image.data.count <= (budget?.maximumTotalBytes ?? limits.maximumTotalBytes) else {
+            respond(transfer.control, "E2BIG: image cache limit", output); return
+        }
         removeImage(id)
         while totalBytes + image.data.count > limits.maximumTotalBytes || images.count >= limits.maximumImages {
             guard let oldest = images.min(by: { $0.value.tick < $1.value.tick })?.key else { break }
             removeImage(oldest)
         }
-        guard image.data.count <= limits.maximumTotalBytes else { respond(transfer.control, "E2BIG: image cache limit", output); return }
+        if let budget, !budget.reserve(bytes: image.data.count, imageID: id, owner: self) {
+            respond(transfer.control, "E2BIG: shared image cache limit", output); return
+        }
         tick &+= 1
         images[id] = Image(data: image.data, width: image.width, height: image.height, tick: tick)
         totalBytes += image.data.count
@@ -217,6 +236,7 @@ struct KittyGraphicsContext {
                                     absoluteRow: context.trimmed + context.liveTop + context.row, rows: rows,
                                     alternate: context.alternate, virtual: control["U"] == "1"))
         tick &+= 1; images[id]?.tick = tick
+        budget?.touch(imageID: id, owner: self)
         if control["C"] != "1", control["U"] != "1" { moveCursor(cols, min(rows, context.rows + 1)) }
         var response = control; response["i"] = String(id)
         respond(response, "OK", output)
@@ -296,9 +316,12 @@ struct KittyGraphicsContext {
     }
 
     private func removeImage(_ id: UInt32) {
-        if let old = images.removeValue(forKey: id) { totalBytes -= old.data.count }
+        let old = images.removeValue(forKey: id)
+        if let old { totalBytes -= old.data.count }
+        budget?.release(imageID: id, owner: self)
         placements.removeAll { $0.imageID == id }
         imageNumbers = imageNumbers.filter { $0.value != id }
+        if old != nil { onImagesInvalidated?() }
     }
     private func nextID() -> UInt32 {
         repeat { sequence &+= 1 } while sequence == 0 || images[sequence] != nil

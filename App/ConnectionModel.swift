@@ -21,7 +21,7 @@ protocol ConnectionTransport: AnyObject {
 extension SSHSession: ConnectionTransport {}
 
 @MainActor @Observable
-final class ConnectionModel {
+final class ConnectionModel: Identifiable {
     @MainActor struct Dependencies {
         var makeTransport: @MainActor () throws -> any ConnectionTransport
         var loadCredential: @MainActor (UUID) async throws -> SSHCredential?
@@ -37,13 +37,20 @@ final class ConnectionModel {
     enum Phase: String { case idle, connecting, connected, checking, disconnected, failed }
     struct TrustPrompt: Identifiable {
         let id = UUID()
+        let attemptID: UUID
         let challenge: HostKeyChallenge
     }
     struct CredentialAnswer {
         let credential: SSHCredential
         let save: Bool
     }
+    private enum WriteOperation: Sendable {
+        case data(Data, userInputGeneration: UUID?)
+        case resize
+    }
 
+    /// A shell's identity is independent of its saved host, which can have multiple shells.
+    let id = UUID()
     let host: SSHHost
     let engine: any TerminalEngine
     private(set) var phase: Phase = .idle
@@ -53,14 +60,26 @@ final class ConnectionModel {
     private(set) var authenticationURL: URL?
     var credentialPrompt = false
     var trustPrompt: TrustPrompt?
+    private(set) var credentialRequestID: UUID?
+    private(set) var isWaitingForCredentialUnlock = false
+    private(set) var isAuthenticationDeferred = false
+    private(set) var isVisible = true
+    var connectionAttemptID: UUID { attempt }
+    var needsAuthenticationAttention: Bool {
+        phase == .connecting && (isWaitingForCredentialUnlock || credentialRequestID != nil || trustPrompt != nil || authenticationURL != nil)
+    }
     @ObservationIgnored private let dependencies: Dependencies
     @ObservationIgnored private var session: (any ConnectionTransport)?
     @ObservationIgnored private var credentialReply: CheckedContinuation<CredentialAnswer?, Never>?
+    @ObservationIgnored private var credentialUnlockReply: CheckedContinuation<Bool, Never>?
     @ObservationIgnored private var pendingCredentialAnswer: CredentialAnswer?
+    @ObservationIgnored private var hasPendingCredentialSubmission = false
     @ObservationIgnored private var trustReply: CheckedContinuation<Bool, Never>?
     @ObservationIgnored private var snapshotTask: Task<Void, Never>?
     @ObservationIgnored private var writerTask: Task<Void, Never>?
-    @ObservationIgnored private var input: AsyncStream<Data>.Continuation?
+    @ObservationIgnored private var input: AsyncStream<WriteOperation>.Continuation?
+    @ObservationIgnored private var inputGeneration = UUID()
+    @ObservationIgnored private var isSendingUserInput = false
     @ObservationIgnored private var attempt = UUID()
     @ObservationIgnored private var initialConnectionTask: Task<Void, Never>?
     @ObservationIgnored private var foregroundCheck: Task<Void, Never>?
@@ -68,23 +87,30 @@ final class ConnectionModel {
     @ObservationIgnored private var isInBackground = false
     @ObservationIgnored private var needsConnectionCheck = false
 
-    init(host: SSHHost, dependencies: Dependencies = .live) {
+    init(host: SSHHost, dependencies: Dependencies = .live, imageBudget: TerminalImageBudget? = nil) {
         self.host = host
         self.dependencies = dependencies
-        engine = SwiftTermEngine(columns: 80, rows: 24)
+        engine = SwiftTermEngine(columns: 80, rows: 24, imageBudget: imageBudget)
         engine.onOutput = { [weak self] data in self?.send(data) }
         engine.onNeedsDisplay = { [weak self] in self?.scheduleSnapshot() }
+        engine.onImageCacheInvalidated = { [weak self] in
+            self?.snapshot = nil
+            self?.scheduleSnapshot()
+        }
         snapshot = engine.snapshot()
     }
 
     /// Owned by the model so presenting a sheet cannot cancel pending authentication.
     func connectOnFirstAppearance() {
         guard phase == .idle, initialConnectionTask == nil else { return }
-        initialConnectionTask = Task { [weak self] in await self?.connect() }
+        initialConnectionTask = Task { [weak self] in
+            guard !Task.isCancelled, let self, self.phase == .idle else { return }
+            await self.connect()
+        }
     }
 
     func connect(enterCredential: Bool = false) async {
-        guard phase != .connecting, phase != .connected, phase != .checking else { return }
+        guard !Task.isCancelled, phase != .connecting, phase != .connected, phase != .checking else { return }
         let token = UUID()
         attempt = token
         needsConnectionCheck = false
@@ -92,16 +118,22 @@ final class ConnectionModel {
         message = nil
         authenticationBanner = ""
         authenticationURL = nil
+        isAuthenticationDeferred = false
         do {
             var credential: SSHCredential?
             if host.authentication == .tailscale {
                 credential = SSHCredential()
             } else if !enterCredential {
+                // Keychain can present Face ID/Touch ID. A tab hidden before its
+                // connect task starts must wait for its explicit attention action.
+                while !isVisible {
+                    guard await waitForCredentialUnlock(token: token), attempt == token, !Task.isCancelled else { return }
+                }
                 credential = try await dependencies.loadCredential(host.id)
             }
             guard attempt == token, !Task.isCancelled else { return }
             if credential == nil {
-                let reply = await askForCredential()
+                let reply = await askForCredential(token: token)
                 guard attempt == token, !Task.isCancelled else { return }
                 guard let answer = reply else {
                     phase = .disconnected
@@ -119,6 +151,7 @@ final class ConnectionModel {
                 self.authenticationBanner = String((self.authenticationBanner + separator + banner).prefix(16_384))
                 if self.host.authentication == .tailscale {
                     self.authenticationURL = TailscaleAuthentication.loginURL(in: self.authenticationBanner)
+                    if !self.isVisible { self.isAuthenticationDeferred = true }
                 }
             }
             transport.onData = { [weak self] data in
@@ -132,6 +165,10 @@ final class ConnectionModel {
                 self.message = reason ?? "The remote session ended."
                 self.authenticationBanner = ""
                 self.authenticationURL = nil
+                self.finishCredentialUnlock(false)
+                self.answerCredential(nil)
+                self.answerTrust(false)
+                self.isAuthenticationDeferred = false
                 self.input?.finish()
                 self.writerTask?.cancel()
             }
@@ -158,6 +195,7 @@ final class ConnectionModel {
             phase = .connected
             authenticationBanner = ""
             authenticationURL = nil
+            isAuthenticationDeferred = false
             if !isInBackground, needsConnectionCheck { enterForeground() }
         } catch {
             guard attempt == token else { return }
@@ -173,11 +211,24 @@ final class ConnectionModel {
     }
 
     func close(message: String? = nil) async {
+        let oldSession = prepareClose(message: message)
+        await oldSession?.disconnect()
+    }
+
+    /// Invalidate callbacks before the workspace removes a tab, then close its socket.
+    @discardableResult
+    func closeImmediately(message: String? = nil) -> Task<Void, Never> {
+        let oldSession = prepareClose(message: message)
+        return Task { await oldSession?.disconnect() }
+    }
+
+    private func prepareClose(message: String?) -> (any ConnectionTransport)? {
         attempt = UUID()
         initialConnectionTask?.cancel()
         initialConnectionTask = nil
         cancelForegroundCheck()
         needsConnectionCheck = false
+        finishCredentialUnlock(false)
         answerCredential(nil)
         answerTrust(false)
         input?.finish()
@@ -188,21 +239,39 @@ final class ConnectionModel {
         self.message = message
         authenticationBanner = ""
         authenticationURL = nil
+        isAuthenticationDeferred = false
         let oldSession = session
         session = nil
-        await oldSession?.disconnect()
+        return oldSession
+    }
+
+    /// Hidden terminals keep parsing output and retain their last measured PTY size.
+    func setVisible(_ visible: Bool) {
+        guard isVisible != visible else { return }
+        inputGeneration = UUID()
+        isVisible = visible
+        if visible, !isInBackground {
+            snapshot = engine.snapshot()
+        } else {
+            snapshotTask?.cancel()
+            snapshotTask = nil
+            if !visible { deferAuthentication() }
+        }
     }
 
     func enterBackground() {
         isInBackground = true
         needsConnectionCheck = true
         cancelForegroundCheck()
+        snapshotTask?.cancel()
+        snapshotTask = nil
         // Keep the shell, terminal engine, credentials, and any pending trust/authentication.
         // iOS may suspend this process; no background execution entitlement is needed.
     }
 
     func enterForeground() {
         isInBackground = false
+        if isVisible { snapshot = engine.snapshot() }
         guard phase == .connected || phase == .checking else { return }
         guard foregroundCheck == nil else { return }
         guard needsConnectionCheck, let transport = session else { return }
@@ -235,7 +304,7 @@ final class ConnectionModel {
             }
             guard transport.isConnected else { throw SSHSessionError.disconnected }
             phase = .connected
-            snapshot = engine.snapshot()
+            if isVisible { snapshot = engine.snapshot() }
         } catch is CancellationError {
             // Another background transition or explicit close owns the current state.
         } catch {
@@ -259,25 +328,55 @@ final class ConnectionModel {
     }
 
     func send(_ data: Data) {
-        guard !data.isEmpty, session?.isConnected == true, let input else { return }
-        if case .dropped = input.yield(data) {
-            Task { await close(message: "The connection could not keep up with keyboard input. Reconnect to continue.") }
+        guard !data.isEmpty, session?.isConnected == true else { return }
+        enqueue(.data(data, userInputGeneration: isSendingUserInput ? inputGeneration : nil))
+    }
+
+    /// UI callbacks must capture the attempt before asynchronous paste/loading.
+    /// Protocol replies generated by a hidden engine still use `send` directly.
+    func sendUserInput(_ data: Data, attemptID: UUID) {
+        guard acceptsUserInput(attemptID: attemptID), !data.isEmpty else { return }
+        enqueue(.data(data, userInputGeneration: inputGeneration))
+    }
+
+    func sendUserKey(_ key: TerminalKey, attemptID: UUID) {
+        guard acceptsUserInput(attemptID: attemptID) else { return }
+        isSendingUserInput = true
+        defer { isSendingUserInput = false }
+        engine.sendKey(key)
+    }
+
+    func pasteUserInput(_ text: String, attemptID: UUID) {
+        guard acceptsUserInput(attemptID: attemptID) else { return }
+        isSendingUserInput = true
+        defer { isSendingUserInput = false }
+        engine.paste(text)
+    }
+
+    private func acceptsUserInput(attemptID: UUID) -> Bool {
+        attempt == attemptID && isVisible && !isInBackground
+            && (phase == .connected || phase == .checking) && session?.isConnected == true
+    }
+
+    private func enqueue(_ operation: WriteOperation) {
+        guard let input else { return }
+        if case .dropped = input.yield(operation) {
+            let token = attempt
+            Task { [weak self] in
+                guard let self, self.attempt == token else { return }
+                await self.close(message: "The connection could not keep up with keyboard input. Reconnect to continue.")
+            }
         }
     }
 
     func resize(columns: Int, rows: Int) {
+        guard isVisible else { return }
         guard engine.columns != columns || engine.rows != rows else { return }
         engine.resize(columns: columns, rows: rows)
-        if phase == .connected, !isInBackground, let transport = session {
-            let token = attempt
-            Task {
-                guard attempt == token else { return }
-                do { try await transport.resize(columns: columns, rows: rows) }
-                catch {
-                    guard attempt == token else { return }
-                    await close(message: error.localizedDescription)
-                }
-            }
+        if phase == .connected, !isInBackground {
+            // Use the same queue as keyboard/paste bytes, so the remote PTY sees
+            // its new dimensions before any input from the newly measured view.
+            enqueue(.resize)
         }
     }
 
@@ -289,52 +388,133 @@ final class ConnectionModel {
         let reply = credentialReply
         credentialReply = nil
         pendingCredentialAnswer = nil
+        hasPendingCredentialSubmission = false
+        credentialRequestID = nil
         credentialPrompt = false
+        isAuthenticationDeferred = false
         reply?.resume(returning: answer)
     }
 
     func submitCredential(_ answer: CredentialAnswer?) {
+        guard credentialRequestID != nil else { return }
         pendingCredentialAnswer = answer
+        hasPendingCredentialSubmission = true
         credentialPrompt = false
     }
 
+    func submitCredential(_ answer: CredentialAnswer?, requestID: UUID, attemptID: UUID) {
+        guard isVisible, !isAuthenticationDeferred,
+              isCurrentCredentialRequest(requestID: requestID, attemptID: attemptID) else { return }
+        submitCredential(answer)
+    }
+
     func credentialSheetDidDismiss() {
+        guard !isAuthenticationDeferred, credentialRequestID != nil else { return }
         // Resume after dismissal so the host-key confirmation can present reliably.
         answerCredential(pendingCredentialAnswer)
+    }
+
+    func credentialSheetDidDismiss(requestID: UUID, attemptID: UUID) {
+        guard isCurrentCredentialRequest(requestID: requestID, attemptID: attemptID) else { return }
+        credentialSheetDidDismiss()
+    }
+
+    private func isCurrentCredentialRequest(requestID: UUID, attemptID: UUID) -> Bool {
+        attempt == attemptID && credentialRequestID == requestID && credentialReply != nil
     }
 
     func answerTrust(_ trusted: Bool) {
         let reply = trustReply
         trustReply = nil
         trustPrompt = nil
+        isAuthenticationDeferred = false
         reply?.resume(returning: trusted)
     }
 
-    private func askForCredential() async -> CredentialAnswer? {
-        await withCheckedContinuation { reply in
+    func answerTrust(_ trusted: Bool, requestID: UUID, attemptID: UUID) {
+        guard isVisible, !isAuthenticationDeferred, attempt == attemptID, trustPrompt?.id == requestID else { return }
+        answerTrust(trusted)
+    }
+
+    func deferAuthentication() {
+        guard needsAuthenticationAttention, !hasPendingCredentialSubmission else { return }
+        isAuthenticationDeferred = true
+        credentialPrompt = false
+    }
+
+    func deferAuthentication(attemptID: UUID) {
+        guard attempt == attemptID else { return }
+        deferAuthentication()
+    }
+
+    func resumeAuthentication() {
+        guard isVisible, needsAuthenticationAttention else { return }
+        isAuthenticationDeferred = false
+        credentialPrompt = credentialRequestID != nil
+        finishCredentialUnlock(true)
+    }
+
+    private func waitForCredentialUnlock(token: UUID) async -> Bool {
+        guard token == attempt else { return false }
+        return await withCheckedContinuation { reply in
+            credentialUnlockReply = reply
+            isWaitingForCredentialUnlock = true
+            isAuthenticationDeferred = true
+        }
+    }
+
+    private func finishCredentialUnlock(_ proceed: Bool) {
+        let reply = credentialUnlockReply
+        credentialUnlockReply = nil
+        isWaitingForCredentialUnlock = false
+        reply?.resume(returning: proceed)
+    }
+
+    private func askForCredential(token: UUID) async -> CredentialAnswer? {
+        guard token == attempt, phase == .connecting else { return nil }
+        return await withCheckedContinuation { reply in
             credentialReply = reply
-            credentialPrompt = true
+            credentialRequestID = UUID()
+            isAuthenticationDeferred = !isVisible
+            credentialPrompt = isVisible
         }
     }
 
     private func askForTrust(_ challenge: HostKeyChallenge, token: UUID) async -> Bool {
-        guard token == attempt else { return false }
+        guard token == attempt, phase == .connecting else { return false }
         return await withCheckedContinuation { reply in
             trustReply = reply
-            trustPrompt = TrustPrompt(challenge: challenge)
+            trustPrompt = TrustPrompt(attemptID: token, challenge: challenge)
+            isAuthenticationDeferred = !isVisible
         }
     }
 
     private func startWriter(transport: any ConnectionTransport, token: UUID) {
         input?.finish()
         writerTask?.cancel()
-        let stream = AsyncStream<Data>.makeStream(bufferingPolicy: .bufferingOldest(256))
+        let stream = AsyncStream<WriteOperation>.makeStream(bufferingPolicy: .bufferingOldest(256))
         input = stream.continuation
         writerTask = Task { [weak self] in
             do {
-                for await data in stream.stream {
-                    guard !Task.isCancelled else { return }
-                    try await transport.write(data)
+                for await operation in stream.stream {
+                    guard !Task.isCancelled, let self, self.attempt == token else { return }
+                    switch operation {
+                    case .resize:
+                        // A lock/check may have superseded a queued layout event.
+                        guard !self.isInBackground, self.phase == .connected else { continue }
+                        try await transport.resize(columns: self.engine.columns, rows: self.engine.rows)
+                    case .data(let data, let generation):
+                        if let generation {
+                            // Foreground validation sends the latest size itself.
+                            // Keep this input queued until that existing PTY is ready.
+                            while self.phase == .checking, let check = self.foregroundCheck {
+                                await check.value
+                                guard !Task.isCancelled, self.attempt == token else { return }
+                            }
+                            guard self.acceptsUserInput(attemptID: token), self.inputGeneration == generation else { continue }
+                        }
+                        try await transport.write(data)
+                    }
                 }
             } catch {
                 guard !Task.isCancelled, let self, self.attempt == token else { return }
@@ -344,10 +524,10 @@ final class ConnectionModel {
     }
 
     private func scheduleSnapshot() {
-        guard snapshotTask == nil else { return }
+        guard isVisible, !isInBackground, snapshotTask == nil else { return }
         snapshotTask = Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(8))
-            guard !Task.isCancelled, let self else { return }
+            guard !Task.isCancelled, let self, self.isVisible, !self.isInBackground else { return }
             self.snapshot = self.engine.snapshot()
             self.snapshotTask = nil
         }

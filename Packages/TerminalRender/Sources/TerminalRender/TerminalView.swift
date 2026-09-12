@@ -3,6 +3,22 @@ import SwiftUI
 import TerminalCore
 import UIKit
 
+/// Identifies the shell receiving keyboard and paste input. A reconnect is a new
+/// attempt even when it reuses the same tab.
+public struct TerminalInputIdentity: Equatable, Sendable {
+    public var sessionID: UUID
+    public var attemptID: UUID
+
+    public init(sessionID: UUID, attemptID: UUID) {
+        self.sessionID = sessionID
+        self.attemptID = attemptID
+    }
+}
+
+public enum TerminalWorkspaceCommand: Equatable, Sendable {
+    case newSession, closeSession, previousSession, nextSession, selectSession(Int), settings
+}
+
 /// A terminal surface driven by immutable engine snapshots. All callbacks run on MainActor.
 @MainActor
 public struct TerminalView: UIViewRepresentable {
@@ -15,6 +31,9 @@ public struct TerminalView: UIViewRepresentable {
     public var onScroll: (@MainActor (Int) -> Void)?
     public var onCellSize: (@MainActor (Int, Int) -> Void)?
     public var onCopySelection: (@MainActor (TerminalSelection) -> String)?
+    public var inputIdentity: TerminalInputIdentity?
+    public var focusRequest: UUID?
+    public var onWorkspaceCommand: (@MainActor (TerminalWorkspaceCommand) -> Void)?
 
     public init(snapshot: TerminalSnapshot?, configuration: TerminalConfiguration = .init(),
                 onInput: @escaping @MainActor (Data) -> Void,
@@ -23,7 +42,10 @@ public struct TerminalView: UIViewRepresentable {
                 onPaste: (@MainActor (String) -> Void)? = nil,
                 onScroll: (@MainActor (Int) -> Void)? = nil,
                 onCellSize: (@MainActor (Int, Int) -> Void)? = nil,
-                onCopySelection: (@MainActor (TerminalSelection) -> String)? = nil) {
+                onCopySelection: (@MainActor (TerminalSelection) -> String)? = nil,
+                inputIdentity: TerminalInputIdentity? = nil,
+                focusRequest: UUID? = nil,
+                onWorkspaceCommand: (@MainActor (TerminalWorkspaceCommand) -> Void)? = nil) {
         self.snapshot = snapshot
         self.configuration = configuration
         self.onInput = onInput
@@ -33,6 +55,9 @@ public struct TerminalView: UIViewRepresentable {
         self.onScroll = onScroll
         self.onCellSize = onCellSize
         self.onCopySelection = onCopySelection
+        self.inputIdentity = inputIdentity
+        self.focusRequest = focusRequest
+        self.onWorkspaceCommand = onWorkspaceCommand
     }
 
     public func makeUIView(context: Context) -> TerminalMetalView {
@@ -46,6 +71,7 @@ public struct TerminalView: UIViewRepresentable {
     public static func dismantleUIView(_ uiView: TerminalMetalView, coordinator: ()) { uiView.stop() }
 
     private func configure(_ view: TerminalMetalView) {
+        view.setInputIdentity(inputIdentity)
         view.onInput = onInput
         view.onResize = onResize
         view.onKey = onKey
@@ -53,14 +79,17 @@ public struct TerminalView: UIViewRepresentable {
         view.onScroll = onScroll
         view.onCellSize = onCellSize
         view.onCopySelection = onCopySelection
+        view.onWorkspaceCommand = onWorkspaceCommand
         view.configure(configuration)
         view.update(snapshot)
+        view.requestFocus(focusRequest)
     }
 }
 
 /// UIKit keyboard input and selection around a damage-driven MTKView.
 @MainActor
-public final class TerminalMetalView: MTKView, UIKeyInput, @preconcurrency UIEditMenuInteractionDelegate {
+public final class TerminalMetalView: MTKView, UIKeyInput, @preconcurrency UIEditMenuInteractionDelegate,
+    UIContextMenuInteractionDelegate, UIPointerInteractionDelegate, UIGestureRecognizerDelegate {
     public var onInput: (@MainActor (Data) -> Void)?
     public var onResize: (@MainActor (Int, Int) -> Void)?
     public var onKey: (@MainActor (TerminalKey) -> Void)?
@@ -68,6 +97,15 @@ public final class TerminalMetalView: MTKView, UIKeyInput, @preconcurrency UIEdi
     public var onScroll: (@MainActor (Int) -> Void)?
     public var onCellSize: (@MainActor (Int, Int) -> Void)?
     public var onCopySelection: (@MainActor (TerminalSelection) -> String)?
+    public var onWorkspaceCommand: (@MainActor (TerminalWorkspaceCommand) -> Void)? {
+        didSet {
+            inputProxy.onWorkspaceCommand = onWorkspaceCommand == nil ? nil : { [weak self] command in
+                guard let self else { return }
+                self.resetTransientInput()
+                self.onWorkspaceCommand?(command)
+            }
+        }
+    }
     public var hasText: Bool { true }
     public var autocapitalizationType: UITextAutocapitalizationType = .none
     public var autocorrectionType: UITextAutocorrectionType = .no
@@ -86,6 +124,17 @@ public final class TerminalMetalView: MTKView, UIKeyInput, @preconcurrency UIEdi
     private var lastCellPixels = CGSize.zero
     private var visibleViewport = CGRect.zero
     private var viewportPublicationScheduled = false
+    private var inputIdentity: TerminalInputIdentity?
+    private var inputGeneration: UInt64 = 0
+    private var lastFocusRequest: UUID?
+    private var pendingFocusRequest = false
+    private var inputNeedsViewport = false
+    private var permanentlyStopped = false
+    private var keyboardScreenFrame: CGRect?
+    private var pasteTasks: [UUID: Task<Void, Never>] = [:]
+    // An asynchronous provider allows UIKit paste permission/loading to finish after
+    // a tab transition. Its result must retain its original input generation.
+    var pasteTextLoader: @MainActor () async -> String? = { UIPasteboard.general.string }
     private var snapshot: TerminalSnapshot?
     private var cursorTimer: Timer?
     private var controlPressed = false
@@ -134,8 +183,17 @@ public final class TerminalMetalView: MTKView, UIKeyInput, @preconcurrency UIEdi
         inputProxy.terminalCanCopy = { [weak self] in self?.selectedRange != nil }
         addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(tapped)))
         addGestureRecognizer(UILongPressGestureRecognizer(target: self, action: #selector(selectText(_:))))
-        addGestureRecognizer(UIPanGestureRecognizer(target: self, action: #selector(scrollHistory(_:))))
+        let scroll = UIPanGestureRecognizer(target: self, action: #selector(scrollHistory(_:)))
+        scroll.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
+        scroll.allowedScrollTypesMask = .all
+        addGestureRecognizer(scroll)
+        let pointerSelection = UIPanGestureRecognizer(target: self, action: #selector(selectText(_:)))
+        pointerSelection.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.indirectPointer.rawValue)]
+        pointerSelection.delegate = self
+        addGestureRecognizer(pointerSelection)
         addInteraction(editMenu)
+        addInteraction(UIContextMenuInteraction(delegate: self))
+        addInteraction(UIPointerInteraction(delegate: self))
         NotificationCenter.default.addObserver(self, selector: #selector(resignedActive), name: UIApplication.willResignActiveNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(becameActive), name: UIApplication.didBecomeActiveNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(memoryWarning), name: UIApplication.didReceiveMemoryWarningNotification, object: nil)
@@ -180,6 +238,7 @@ public final class TerminalMetalView: MTKView, UIKeyInput, @preconcurrency UIEdi
 
     public override func didMoveToWindow() {
         super.didMoveToWindow()
+        guard !permanentlyStopped else { return }
         if let screen = window?.screen {
             contentScaleFactor = screen.scale
             preferredFramesPerSecond = screen.maximumFramesPerSecond
@@ -188,7 +247,7 @@ public final class TerminalMetalView: MTKView, UIKeyInput, @preconcurrency UIEdi
             restartCursorTimer()
             requestViewportRefresh(forcePublication: true)
             setNeedsDisplay()
-        } else { stop() }
+        } else { suspend() }
     }
 
     public override func layoutSubviews() {
@@ -220,8 +279,21 @@ public final class TerminalMetalView: MTKView, UIKeyInput, @preconcurrency UIEdi
         let width = min(visibleViewport.width, max(cell.width * 2, ceil(textWidth) + cell.width))
         let fitting = inputProxy.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude))
         let frame = TerminalTextInputLayout.frame(cursor: cursor, viewport: visibleViewport,
-                                                  preferredSize: CGSize(width: width, height: ceil(fitting.height)))
+                                                  preferredSize: CGSize(width: width, height: ceil(fitting.height)),
+                                                  avoiding: floatingKeyboardOcclusion())
         if inputProxy.frame != frame { inputProxy.frame = frame }
+    }
+
+    private func floatingKeyboardOcclusion() -> CGRect? {
+        guard let window, let keyboardScreenFrame else { return nil }
+        let inWindow = window.convert(keyboardScreenFrame, from: window.screen.coordinateSpace)
+        let keyboard = convert(inWindow, from: window).intersection(visibleViewport)
+        guard !keyboard.isNull, !keyboard.isEmpty,
+              keyboard.width < visibleViewport.width - 1 else { return nil }
+        if let accessory = accessoryFrameInTerminal(), accessory.intersects(visibleViewport) {
+            return keyboard.union(accessory).intersection(visibleViewport)
+        }
+        return keyboard
     }
 
     private func accessoryFrameInTerminal() -> CGRect? {
@@ -254,7 +326,7 @@ public final class TerminalMetalView: MTKView, UIKeyInput, @preconcurrency UIEdi
         // Read the latest geometry after UIKit and SwiftUI finish their layout changes;
         // queued callbacks must not replay an obsolete pre-keyboard PTY size.
         DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
+            guard let self, !self.permanentlyStopped else { return }
             self.layoutIfNeeded()
             self.publishViewport()
             self.viewportPublicationScheduled = false
@@ -262,6 +334,7 @@ public final class TerminalMetalView: MTKView, UIKeyInput, @preconcurrency UIEdi
     }
 
     private func publishViewport() {
+        guard !permanentlyStopped else { return }
         guard let size = renderer?.cellSize,
               let grid = TerminalViewportLayout.gridSize(in: visibleViewport, cellSize: size) else { return }
         let pixels = CGSize(width: round(size.width * contentScaleFactor), height: round(size.height * contentScaleFactor))
@@ -273,6 +346,56 @@ public final class TerminalMetalView: MTKView, UIKeyInput, @preconcurrency UIEdi
             lastGridSize = grid
             onResize?(Int(grid.width), Int(grid.height))
         }
+        inputNeedsViewport = false
+        if pendingFocusRequest, window != nil {
+            pendingFocusRequest = false
+            becomeFirstResponder()
+        }
+    }
+
+    public func setInputIdentity(_ identity: TerminalInputIdentity?) {
+        guard identity != inputIdentity else { return }
+        resetTransientInput()
+        inputIdentity = identity
+        snapshot = nil
+        renderer?.update(nil)
+        panRemainder = 0
+        inputNeedsViewport = true
+        requestViewportRefresh(forcePublication: true)
+    }
+
+    /// A token change requests focus after the active tab has a measured PTY size.
+    /// Keeping the same token across normal snapshot updates preserves a hidden keyboard.
+    public func requestFocus(_ token: UUID?) {
+        guard let token else {
+            // A modal may appear before a queued viewport publication. It owns
+            // focus now, so that publication must not reactivate the terminal.
+            pendingFocusRequest = false
+            return
+        }
+        guard token != lastFocusRequest else { return }
+        lastFocusRequest = token
+        pendingFocusRequest = true
+        requestViewportRefresh()
+    }
+
+    private func resetTransientInput() {
+        inputGeneration &+= 1
+        for task in pasteTasks.values { task.cancel() }
+        pasteTasks.removeAll()
+        inputProxy.cancelComposition()
+        controlPressed = false
+        controlButton?.isSelected = false
+        clearSelection()
+    }
+
+    private func prepareForInput() -> Bool {
+        guard !permanentlyStopped else { return false }
+        if inputNeedsViewport {
+            layoutIfNeeded()
+            publishViewport()
+        }
+        return !inputNeedsViewport
     }
 
     public func configure(_ configuration: TerminalConfiguration) {
@@ -313,7 +436,26 @@ public final class TerminalMetalView: MTKView, UIKeyInput, @preconcurrency UIEdi
     }
 
     public func stop() {
-        inputProxy.cancelComposition()
+        permanentlyStopped = true
+        pendingFocusRequest = false
+        suspend()
+        inputProxy.resignFirstResponder()
+        NotificationCenter.default.removeObserver(self)
+        delegate = nil
+        renderer = nil
+        snapshot = nil
+        onInput = nil
+        onResize = nil
+        onKey = nil
+        onPaste = nil
+        onScroll = nil
+        onCellSize = nil
+        onCopySelection = nil
+        onWorkspaceCommand = nil
+    }
+
+    private func suspend() {
+        resetTransientInput()
         cursorTimer?.invalidate()
         cursorTimer = nil
         renderer?.isActive = false
@@ -324,6 +466,7 @@ public final class TerminalMetalView: MTKView, UIKeyInput, @preconcurrency UIEdi
     }
 
     private func sendCommittedText(_ text: String) {
+        guard prepareForInput() else { return }
         clearSelection()
         if text == "\n" { send(.enter); return }
         if controlPressed {
@@ -349,6 +492,7 @@ public final class TerminalMetalView: MTKView, UIKeyInput, @preconcurrency UIEdi
         guard let key = press.key else { return false }
         let modifiers = key.modifierFlags
         if modifiers.contains(.command) { return false }
+        guard prepareForInput() else { return true }
         if let terminalKey = terminalKey(for: key.keyCode) {
             send(terminalKey, modifiers: modifiers)
         } else if let sequence = functionSequence(for: key.keyCode, modifiers: modifiers) {
@@ -405,9 +549,24 @@ public final class TerminalMetalView: MTKView, UIKeyInput, @preconcurrency UIEdi
     }
 
     public override func paste(_ sender: Any?) {
-        guard let text = UIPasteboard.general.string else { return }
+        guard prepareForInput() else { return }
         inputProxy.commitComposition()
         clearSelection()
+        let generation = inputGeneration
+        let identity = inputIdentity
+        let load = pasteTextLoader
+        let taskID = UUID()
+        pasteTasks[taskID] = Task { [weak self] in
+            let text = await load()
+            guard let self else { return }
+            defer { self.pasteTasks[taskID] = nil }
+            guard !Task.isCancelled, generation == self.inputGeneration,
+                  identity == self.inputIdentity, !self.permanentlyStopped, let text else { return }
+            self.deliverPaste(text)
+        }
+    }
+
+    private func deliverPaste(_ text: String) {
         if let onPaste { onPaste(text) }
         else {
             let normalized = text.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n")
@@ -427,16 +586,48 @@ public final class TerminalMetalView: MTKView, UIKeyInput, @preconcurrency UIEdi
 
     public func editMenuInteraction(_ interaction: UIEditMenuInteraction, menuFor configuration: UIEditMenuConfiguration,
                                     suggestedActions: [UIMenuElement]) -> UIMenu? {
+        terminalEditMenu()
+    }
+
+    public func contextMenuInteraction(_ interaction: UIContextMenuInteraction,
+                                       configurationForMenuAtLocation location: CGPoint) -> UIContextMenuConfiguration? {
+        let generation = inputGeneration
+        return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { [weak self] _ in
+            guard let self, self.inputGeneration == generation else { return nil }
+            return self.terminalEditMenu()
+        }
+    }
+
+    public func pointerInteraction(_ interaction: UIPointerInteraction,
+                                   styleFor region: UIPointerRegion) -> UIPointerStyle? {
+        UIPointerStyle(shape: UIPointerShape.verticalBeam(length: renderer?.cellSize.height ?? 20))
+    }
+
+    public func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive event: UIEvent) -> Bool {
+        // This delegate is used only by pointer selection. Secondary-click belongs
+        // to the context menu, and wheel/trackpad scrolling has its own recognizer.
+        event.buttonMask.contains(.primary)
+    }
+
+    private func terminalEditMenu() -> UIMenu {
+        let generation = inputGeneration
+        func action(_ title: String, image: UIImage? = nil, perform: @escaping @MainActor (TerminalMetalView) -> Void) -> UIAction {
+            UIAction(title: title, image: image) { [weak self] _ in
+                guard let self, self.inputGeneration == generation, !self.permanentlyStopped else { return }
+                perform(self)
+            }
+        }
         var actions: [UIMenuElement] = []
         if selectedRange != nil {
-            actions.append(UIAction(title: "Copy", image: UIImage(systemName: "doc.on.doc")) { [weak self] _ in self?.copy(nil) })
+            actions.append(action("Copy", image: UIImage(systemName: "doc.on.doc")) { $0.copy(nil) })
         }
-        actions.append(UIAction(title: "Paste", image: UIImage(systemName: "doc.on.clipboard")) { [weak self] _ in self?.paste(nil) })
-        actions.append(UIAction(title: "Select All") { [weak self] _ in self?.selectAll(nil) })
+        actions.append(action("Paste", image: UIImage(systemName: "doc.on.clipboard")) { $0.paste(nil) })
+        actions.append(action("Select All") { $0.selectAll(nil) })
         return UIMenu(children: actions)
     }
 
     private func send(_ key: TerminalKey, modifiers: UIKeyModifierFlags = []) {
+        guard prepareForInput() else { return }
         if inputProxy.consumeTerminalKey(key) { return }
         clearSelection()
         var significant = modifiers.intersection([.shift, .control, .alternate])
@@ -516,7 +707,7 @@ public final class TerminalMetalView: MTKView, UIKeyInput, @preconcurrency UIEdi
 
     @objc private func tapped() { clearSelection(); becomeFirstResponder() }
 
-    @objc private func selectText(_ gesture: UILongPressGestureRecognizer) {
+    @objc private func selectText(_ gesture: UIGestureRecognizer) {
         guard !inputProxy.hasComposition else { return }
         guard let snapshot, snapshot.columns > 0, snapshot.rows > 0, let size = renderer?.cellSize else { return }
         let point = gesture.location(in: self)
@@ -574,9 +765,10 @@ public final class TerminalMetalView: MTKView, UIKeyInput, @preconcurrency UIEdi
         setNeedsDisplay()
     }
 
-    @objc private func resignedActive() { stop() }
+    @objc private func resignedActive() { suspend() }
     @objc private func keyboardFrameChanged(_ notification: Notification) {
         if let screen = notification.object as? UIScreen, let window, screen !== window.screen { return }
+        keyboardScreenFrame = (notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue)?.cgRectValue
         requestViewportRefresh()
     }
     @objc private func memoryWarning() {
@@ -584,6 +776,7 @@ public final class TerminalMetalView: MTKView, UIKeyInput, @preconcurrency UIEdi
         setNeedsDisplay()
     }
     @objc private func becameActive() {
+        guard !permanentlyStopped else { return }
         renderer?.isActive = window != nil
         requestViewportRefresh(forcePublication: true)
         restartCursorTimer()
@@ -600,7 +793,7 @@ public final class TerminalMetalView: MTKView, UIKeyInput, @preconcurrency UIEdi
     }
 
     private func makeAccessory() -> UIView {
-        let container = TerminalAccessoryView(frame: CGRect(x: 0, y: 0, width: 390, height: 44), inputViewStyle: .default)
+        let container = TerminalAccessoryView(frame: CGRect(x: 0, y: 0, width: 390, height: 52), inputViewStyle: .default)
         container.backgroundColor = .secondarySystemBackground
         container.isOpaque = true
         container.onGeometryChange = { [weak self] in self?.requestViewportRefresh() }
@@ -622,7 +815,7 @@ public final class TerminalMetalView: MTKView, UIKeyInput, @preconcurrency UIEdi
             configuration.contentInsets = NSDirectionalEdgeInsets(top: 6, leading: 10, bottom: 6, trailing: 10)
             button.configuration = configuration
             button.addAction(UIAction { _ in action() }, for: .touchUpInside)
-            button.widthAnchor.constraint(greaterThanOrEqualToConstant: 36).isActive = true
+            button.widthAnchor.constraint(greaterThanOrEqualToConstant: 44).isActive = true
             stack.addArrangedSubview(button)
             return button
         }
