@@ -30,13 +30,13 @@ struct TerminalFontTests {
         }
     }
 
-    @Test
-    func missingCJKGlyphsUseTheBundledJapaneseFallbackAndMatchingStyle() throws {
+    @Test(arguments: [9, 16], [2, 3])
+    func missingCJKGlyphsUseTheBundledJapaneseFallbackAndMatchingStyle(fontSize: Int, scale: Int) throws {
         let samples = ["\u{3400}", "\u{20021}", "\u{30ede}"]
-        let atlas = try atlas()
+        let atlas = try atlas(fontSize: CGFloat(fontSize), scale: CGFloat(scale))
         for bold in [false, true] {
             for italic in [false, true] {
-                let font = TerminalFont.font(ofSize: 16, bold: bold, italic: italic)
+                let font = TerminalFont.font(ofSize: CGFloat(fontSize), bold: bold, italic: italic)
                 let primaryCharacters = CTFontCopyCharacterSet(font as CTFont) as CharacterSet
                 for text in samples {
                     // These scalars are absent in HackGen, so the test cannot pass by
@@ -125,9 +125,9 @@ struct TerminalFontTests {
         }
     }
 
-    @Test
-    func powerlineJoinsCoverLineSpacingAndEmojiRemainColored() throws {
-        let atlas = try atlas()
+    @Test(arguments: [9, 16], [2, 3])
+    func powerlineJoinsCoverLineSpacingAndEmojiRemainColored(fontSize: Int, scale: Int) throws {
+        let atlas = try atlas(fontSize: CGFloat(fontSize), scale: CGFloat(scale))
         let right = try pixels(atlas, text: "\u{e0b0}", width: 1)
         let left = try pixels(atlas, text: "\u{e0b2}", width: 1)
         #expect((0..<right.height).allSatisfy { right.alpha(x: 0, y: $0) > 0 })
@@ -144,9 +144,9 @@ struct TerminalFontTests {
         }
     }
 
-    private func atlas() throws -> GlyphAtlas {
+    private func atlas(fontSize: CGFloat = 16, scale: CGFloat = 3) throws -> GlyphAtlas {
         let device = try #require(MTLCreateSystemDefaultDevice(), "Glyph rendering requires Metal")
-        return GlyphAtlas(device: device, configuration: .init(fontSize: 16), scale: 3)
+        return GlyphAtlas(device: device, configuration: .init(fontSize: fontSize), scale: scale)
     }
 
     private struct Pixels {

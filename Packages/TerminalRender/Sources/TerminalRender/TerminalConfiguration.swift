@@ -30,12 +30,14 @@ public struct TerminalTheme: Equatable, Sendable {
 }
 
 public struct TerminalConfiguration: Equatable, Sendable {
+    public static let defaultFontSize: CGFloat = 9
+
     public var fontSize: CGFloat
     public var fontName: String
     public var theme: TerminalTheme
     public var cursorBlinks: Bool
 
-    public init(fontSize: CGFloat = 14, fontName: String = TerminalFont.postScriptName, theme: TerminalTheme = .dark, cursorBlinks: Bool = true) {
+    public init(fontSize: CGFloat = TerminalConfiguration.defaultFontSize, fontName: String = TerminalFont.postScriptName, theme: TerminalTheme = .dark, cursorBlinks: Bool = true) {
         self.fontSize = min(32, max(8, fontSize))
         self.fontName = fontName
         self.theme = theme

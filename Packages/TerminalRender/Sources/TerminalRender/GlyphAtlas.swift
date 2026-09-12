@@ -36,7 +36,9 @@ final class GlyphAtlas {
         let size = min(32, max(8, configuration.fontSize))
         self.font = TerminalFont.font(named: configuration.fontName, size: size)
         let advance = ("M" as NSString).size(withAttributes: [.font: font]).width
-        cellSize = CGSize(width: ceil(advance * scale) / scale, height: ceil((font.lineHeight + 2) * scale) / scale)
+        // Extra point-based leading disproportionately elongates the grid at
+        // small font sizes, including images made from terminal block cells.
+        cellSize = CGSize(width: ceil(advance * scale) / scale, height: ceil(font.lineHeight * scale) / scale)
     }
 
     func glyph(text: String, width: Int, bold: Bool, italic: Bool) -> Glyph? {

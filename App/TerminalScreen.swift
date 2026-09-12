@@ -6,7 +6,7 @@ import TerminalRender
 
 /// The workspace owns the connection; this view only presents the selected session.
 struct TerminalScreen: View {
-    @AppStorage("terminal.fontSize") private var fontSize: Double = 14
+    @AppStorage("terminal.fontSize") private var fontSize = Double(TerminalConfiguration.defaultFontSize)
     @AppStorage(TerminalFontLibrary.selectionKey) private var selectedFontName = TerminalFont.postScriptName
     @AppStorage("terminal.theme") private var themeName = "dark"
     let model: ConnectionModel

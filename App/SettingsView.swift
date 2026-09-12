@@ -4,7 +4,7 @@ import UniformTypeIdentifiers
 
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
-    @AppStorage("terminal.fontSize") private var fontSize: Double = 14
+    @AppStorage("terminal.fontSize") private var fontSize = Double(TerminalConfiguration.defaultFontSize)
     @AppStorage("terminal.theme") private var theme = "dark"
     @AppStorage(TerminalFontLibrary.selectionKey) private var fontName = TerminalFont.postScriptName
     @State private var fontLibrary = TerminalFontLibrary.shared
