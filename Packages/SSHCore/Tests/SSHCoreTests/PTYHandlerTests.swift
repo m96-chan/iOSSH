@@ -1,0 +1,80 @@
+import Foundation
+import Testing
+import NIOCore
+import NIOEmbedded
+import NIOSSH
+@testable import SSHCore
+
+// Test fixtures are used only synchronously on the embedded event loop/main actor.
+private final class RequestRecorder: ChannelOutboundHandler, @unchecked Sendable {
+    typealias OutboundIn = ByteBuffer
+    var requests: [Any] = []
+    func triggerUserOutboundEvent(context: ChannelHandlerContext, event: Any, promise: EventLoopPromise<Void>?) {
+        requests.append(event)
+        promise?.succeed(())
+    }
+}
+
+private final class ReadyResult: @unchecked Sendable {
+    var result: Result<Void, Error>?
+}
+
+struct PTYHandlerTests {
+    @Test @MainActor func waitsForPTYAndShellAcknowledgements() throws {
+        let channel = EmbeddedChannel()
+        let recorder = RequestRecorder()
+        let ready = channel.eventLoop.makePromise(of: Void.self)
+        let result = ReadyResult()
+        ready.futureResult.whenComplete { result.result = $0 }
+        let (_, output) = AsyncThrowingStream<Data, Error>.makeStream()
+        let handler = PTYHandler(term: "xterm-256color", columns: 80, rows: 24, ready: ready, output: output)
+        try channel.pipeline.addHandlers(recorder, handler).wait()
+        channel.pipeline.fireChannelActive()
+        #expect(recorder.requests.count == 1)
+        #expect(recorder.requests.first is SSHChannelRequestEvent.PseudoTerminalRequest)
+        #expect(result.result == nil)
+        channel.pipeline.fireUserInboundEventTriggered(ChannelSuccessEvent())
+        #expect(recorder.requests.count == 2)
+        #expect(recorder.requests.last is SSHChannelRequestEvent.ShellRequest)
+        #expect(result.result == nil)
+        channel.pipeline.fireUserInboundEventTriggered(ChannelSuccessEvent())
+        guard case .success = result.result else { Issue.record("Shell did not become ready"); return }
+        _ = try channel.finish()
+    }
+
+    @Test @MainActor func rejectedPTYFailsBeforeShell() throws {
+        let channel = EmbeddedChannel()
+        let recorder = RequestRecorder()
+        let ready = channel.eventLoop.makePromise(of: Void.self)
+        let result = ReadyResult()
+        ready.futureResult.whenComplete { result.result = $0 }
+        let (_, output) = AsyncThrowingStream<Data, Error>.makeStream()
+        try channel.pipeline.addHandlers(recorder, PTYHandler(term: "xterm", columns: 80, rows: 24,
+                                                             ready: ready, output: output)).wait()
+        channel.pipeline.fireChannelActive()
+        channel.pipeline.fireUserInboundEventTriggered(ChannelFailureEvent())
+        #expect(recorder.requests.count == 1)
+        guard case .failure(let error) = result.result else { Issue.record("Rejection was ignored"); return }
+        #expect(error as? SSHSessionError == .requestRejected)
+        _ = try channel.finish(acceptAlreadyClosed: true)
+    }
+
+    @Test @MainActor func byteStreamPreservesBinaryAndStderrOrdering() async throws {
+        let channel = EmbeddedChannel()
+        let ready = channel.eventLoop.makePromise(of: Void.self)
+        let (stream, output) = AsyncThrowingStream<Data, Error>.makeStream()
+        try channel.pipeline.syncOperations.addHandlers(RequestRecorder(), PTYHandler(term: "xterm", columns: 80, rows: 24,
+                                                                                     ready: ready, output: output))
+        channel.pipeline.fireChannelActive()
+        channel.pipeline.fireUserInboundEventTriggered(ChannelSuccessEvent())
+        channel.pipeline.fireUserInboundEventTriggered(ChannelSuccessEvent())
+        let first: [UInt8] = [0, 27, 91, 255, 195]
+        let second: [UInt8] = [169, 10]
+        _ = try channel.writeInbound(SSHChannelData(type: .channel, data: .byteBuffer(ByteBuffer(bytes: first))))
+        _ = try channel.writeInbound(SSHChannelData(type: .stdErr, data: .byteBuffer(ByteBuffer(bytes: second))))
+        _ = try channel.finish()
+        var received = Data()
+        for try await chunk in stream { received.append(chunk) }
+        #expect(received == Data(first + second))
+    }
+}

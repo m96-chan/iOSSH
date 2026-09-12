@@ -7,10 +7,18 @@ English | [日本語](README.jp.md)
 Work correctly as a terminal. Stay fast. Keep everything else out.
 Designed around image display through the Kitty Graphics Protocol and GPU rendering with Metal.
 
-> **Status: Design phase (implementation has not started)**
-> This document also serves as the agreed design before implementation begins.
+> **Status: Initial implementation — v1 acceptance testing is still in progress.**
+> The numbered sections below describe the target design. Current implementation details and gaps are listed here.
 
-<!-- TODO: Screenshots (iPhone / iPad) -->
+The repository now contains an iPhone/iPad app with SwiftData host management, Keychain credentials, SSH PTY sessions, explicit first-use host key approval, reconnect, and a Metal terminal. The terminal uses the planned **SwiftTerm fallback** behind `TerminalEngine`; no libghostty-vt binary is required.
+
+Implemented authentication: passwords, OpenSSH Ed25519 keys (including supported encrypted keys), and unencrypted ECDSA PEM keys. The current SSH dependency does not implement keyboard-interactive; RSA is also unavailable. These methods are not offered by the app.
+
+Rendering includes a CoreText glyph atlas, instanced Metal drawing, 24-bit colors, keyboard shortcuts and accessory keys, selection/copy/paste, scrollback, and dark/light themes. Kitty direct RGB/RGBA/PNG transfers have bounded storage. Graphics animation, compressed transfers, relative placements, and explicit source cropping remain unsupported. Ordinary image placements are cleared on resize; Unicode placeholder placements follow the text and survive reflow.
+
+VT parsing currently runs on `MainActor`. Dedicated parsing isolation, the libghostty-vt backend, Display P3 output, and physical-device 120Hz/power measurements remain follow-up work. Backgrounding closes the connection; reconnect opens a new shell. Use a remote multiplexer when shell continuity is needed.
+
+See [development and validation notes](docs/DEVELOPMENT.md) for build commands, key formats, and test coverage.
 
 ---
 
@@ -163,17 +171,20 @@ Some remote hosts lack the `xterm-kitty` terminfo entry, so provide a **per-host
 
 ---
 
-## 7. Planned Repository Structure
+## 7. Repository Structure
 
 ```
 iOSSH/
 ├─ App/                   # SwiftUI entry point and screens
 ├─ Packages/
 │  ├─ SSHCore/            # Citadel wrapper, authentication, known_hosts, reconnection
-│  ├─ TerminalCore/       # TerminalEngine protocol + libghostty-vt bindings
+│  ├─ TerminalCore/       # TerminalEngine protocol, SwiftTerm adapter, Kitty graphics
 │  └─ TerminalRender/     # Metal renderer, GlyphAtlas, shaders
-├─ Vendor/
-│  └─ libghostty-vt.xcframework   # Cross-compiled with Zig
+├─ UITests/               # App interaction tests
+├─ docs/                  # Development and validation notes
+├─ iOSSH.xcodeproj/       # Generated Xcode project (committed)
+├─ project.yml           # XcodeGen source
+├─ Makefile
 ├─ README.md              # English version
 └─ README.jp.md           # Japanese version
 ```
@@ -187,14 +198,14 @@ Each package must be independently testable (`TerminalCore` must support testing
 
 | Requirement | Purpose |
 | --- | --- |
-| Xcode 16+ / iOS 17 SDK | The app itself |
-| Swift 6 | Strict concurrency |
-| [Zig](https://ziglang.org/) | Cross-compile libghostty-vt for `aarch64-ios` / `aarch64-ios-simulator` and generate an XCFramework |
+| Xcode 26+ / Swift 6.2+ | Current resolved dependencies; deployment target remains iOS 17 |
+| [XcodeGen](https://github.com/yonaskolb/XcodeGen) | Regenerate the Xcode project after changing `project.yml` |
+| [Zig](https://ziglang.org/) (future backend only) | Not needed for the current SwiftTerm implementation |
 
 ```bash
 git clone https://github.com/m96-chan/iOSSH.git
 cd iOSSH
-make bootstrap   # TODO: Build libghostty-vt and generate the XCFramework
+make bootstrap   # Generate the project and resolve Swift packages
 open iOSSH.xcodeproj
 ```
 

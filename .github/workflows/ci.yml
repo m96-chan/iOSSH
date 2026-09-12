@@ -1,0 +1,28 @@
+name: Build and test
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  ios:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Show toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+      - name: Test SSH and terminal packages
+        run: make test
+      - name: Install Metal compiler component
+        run: xcodebuild -downloadComponent MetalToolchain
+      - name: Build iPhone and iPad app
+        run: make build
+      - name: Test app lifecycle and UI
+        run: |
+          IOSSH_SIMULATOR_ID=$(xcrun simctl list devices available --json | python3 -c 'import json,sys; devices=json.load(sys.stdin)["devices"]; print(next(d["udid"] for runtime in sorted(devices, reverse=True) if "iOS" in runtime for d in devices[runtime] if d["isAvailable"] and d["name"].startswith("iPhone")))')
+          xcodebuild -project iOSSH.xcodeproj -scheme iOSSH -destination "platform=iOS Simulator,id=$IOSSH_SIMULATOR_ID" -derivedDataPath build/DerivedData -skipPackagePluginValidation -parallel-testing-enabled NO test

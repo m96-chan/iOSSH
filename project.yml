@@ -1,0 +1,88 @@
+name: iOSSH
+options:
+  minimumXcodeGenVersion: 2.44.0
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    SWIFT_STRICT_CONCURRENCY: complete
+    IPHONEOS_DEPLOYMENT_TARGET: "17.0"
+    DEVELOPMENT_TEAM: ""
+packages:
+  SSHCore:
+    path: Packages/SSHCore
+  TerminalCore:
+    path: Packages/TerminalCore
+  TerminalRender:
+    path: Packages/TerminalRender
+targets:
+  iOSSH:
+    type: application
+    platform: iOS
+    sources:
+      - App
+    dependencies:
+      - package: SSHCore
+      - package: TerminalCore
+      - package: TerminalRender
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: moe.technologies.iossh
+        PRODUCT_NAME: iOSSH
+        MARKETING_VERSION: 0.1.0
+        CURRENT_PROJECT_VERSION: 1
+        TARGETED_DEVICE_FAMILY: "1,2"
+        GENERATE_INFOPLIST_FILE: false
+    info:
+      path: App/Info.plist
+      properties:
+        CFBundleDisplayName: iOSSH
+        LSRequiresIPhoneOS: true
+        UILaunchScreen: {}
+        NSFaceIDUsageDescription: Unlock your saved SSH credentials.
+        NSLocalNetworkUsageDescription: Connect to SSH servers on your local network.
+        CADisableMinimumFrameDurationOnPhone: true
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+  iOSSHUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - UITests
+    dependencies:
+      - target: iOSSH
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: moe.technologies.iossh.uitests
+        GENERATE_INFOPLIST_FILE: true
+  iOSSHTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - AppTests
+    dependencies:
+      - target: iOSSH
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: moe.technologies.iossh.tests
+        GENERATE_INFOPLIST_FILE: true
+schemes:
+  iOSSH:
+    build:
+      targets:
+        iOSSH: all
+    test:
+      targets:
+        - iOSSHTests
+        - iOSSHUITests

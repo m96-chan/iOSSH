@@ -7,10 +7,18 @@
 ターミナルとして正しく動くこと、速いこと、それ以外を持ち込まないこと。
 Kitty Graphics Protocol による画像表示と、Metal による GPU レンダリングを前提に設計する。
 
-> **Status: 設計フェーズ（実装未着手）**
-> このドキュメントは実装前の設計合意文書を兼ねている。
+> **Status: 初期実装済み — v1 の受け入れ検証は継続中。**
+> 以下の番号付きセクションは目標とする設計。現在の実装と差分をここに記載する。
 
-<!-- TODO: スクリーンショット（iPhone / iPad） -->
+iPhone / iPad アプリとして、SwiftData のホスト管理、Keychain の資格情報保存、SSH の PTY セッション、初回ホスト鍵の明示的な承認、再接続、Metal ターミナルを実装。VT 処理には設計上の退避先である **SwiftTerm** を `TerminalEngine` 越しに使用し、libghostty-vt バイナリは不要。
+
+認証はパスワード、OpenSSH 形式の Ed25519 鍵（対応する暗号化鍵を含む）、暗号化されていない ECDSA PEM 鍵に対応。現在の SSH 依存ライブラリには keyboard-interactive の実装がなく、RSA も未対応のため、アプリでは選択できない。
+
+CoreText のグリフアトラス、Metal のインスタンス描画、24bit 色、キーボード操作・補助キー、選択・コピー・ペースト、scrollback、ダーク / ライトテーマを実装。Kitty の direct RGB / RGBA / PNG 転送には保存容量の上限を設けている。画像アニメーション、圧縮転送、相対配置、明示的な画像クロップは未対応。リサイズ時は通常の画像配置を破棄するが、Unicode placeholder の配置はテキストに追従して reflow 後も保持する。
+
+VT パースは現時点では `MainActor` 上で行う。専用 actor への移行、libghostty-vt バックエンド、Display P3 出力、実機での 120Hz・消費電力計測は今後の作業。バックグラウンド移行時に切断し、再接続は新しいシェルを開く。シェルの継続が必要な場合は接続先でマルチプレクサを利用する。
+
+ビルド手順、対応する鍵形式、テスト内容は [開発・検証ノート](docs/DEVELOPMENT.jp.md) を参照。
 
 ---
 
@@ -163,17 +171,20 @@ Kitty 固有機能を要求されるため、対応が揃った時点で `TERM=x
 
 ---
 
-## 7. リポジトリ構成（これから作る形）
+## 7. リポジトリ構成
 
 ```
 iOSSH/
 ├─ App/                   # SwiftUI エントリポイント、画面
 ├─ Packages/
 │  ├─ SSHCore/            # Citadel ラッパ、認証、known_hosts、再接続
-│  ├─ TerminalCore/       # TerminalEngine protocol + libghostty-vt バインディング
+│  ├─ TerminalCore/       # TerminalEngine protocol、SwiftTerm アダプタ、Kitty graphics
 │  └─ TerminalRender/     # Metal レンダラ、GlyphAtlas、シェーダ
-├─ Vendor/
-│  └─ libghostty-vt.xcframework   # Zig でクロスビルドしたもの
+├─ UITests/               # アプリ操作テスト
+├─ docs/                  # 開発・検証ノート
+├─ iOSSH.xcodeproj/       # 生成済み Xcode プロジェクト（コミット対象）
+├─ project.yml           # XcodeGen の定義
+├─ Makefile
 ├─ README.md              # 英語版
 └─ README.jp.md           # 日本語版
 ```
@@ -187,14 +198,14 @@ iOSSH/
 
 | 必要なもの | 用途 |
 | --- | --- |
-| Xcode 16+ / iOS 17 SDK | アプリ本体 |
-| Swift 6 | strict concurrency |
-| [Zig](https://ziglang.org/) | libghostty-vt を `aarch64-ios` / `aarch64-ios-simulator` 向けにクロスビルドし XCFramework を生成 |
+| Xcode 26+ / Swift 6.2+ | 現在固定している依存関係に必要。アプリの対応 OS は iOS 17 以降 |
+| [XcodeGen](https://github.com/yonaskolb/XcodeGen) | `project.yml` 変更後の Xcode プロジェクト再生成 |
+| [Zig](https://ziglang.org/)（将来のバックエンドのみ） | 現在の SwiftTerm 実装では不要 |
 
 ```bash
 git clone https://github.com/m96-chan/iOSSH.git
 cd iOSSH
-make bootstrap   # TODO: libghostty-vt のビルドと XCFramework 生成
+make bootstrap   # プロジェクト生成と Swift パッケージ解決
 open iOSSH.xcodeproj
 ```
 
