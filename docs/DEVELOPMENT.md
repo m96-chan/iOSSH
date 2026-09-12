@@ -85,7 +85,7 @@ Use a disposable test key and account. The test checks PTY output, remote `stty`
 On 2026-09-12, with Xcode 26.5 / Swift 6.3.2:
 
 - iOS Simulator app build succeeded (iPhone and iPad target families).
-- A Personal Team signed Debug build passed signature validation and installed on iPhone 17e / iOS 26.6.1; device trust approval is required before first launch.
+- A Personal Team signed Debug build passed signature validation, installed, and launched on iPhone 17e / iOS 26.6.1 after trusting the developer certificate. The app process remained running after launch; physical-device SSH and interaction testing is still pending.
 - SSHCore: 11 unit/protocol tests and the real OpenSSH integration test passed.
 - TerminalCore: 18 tests / 19 parameterized cases passed.
 - App connection lifecycle: 7 tests passed on iPhone 17 / iOS 26.5 Simulator.

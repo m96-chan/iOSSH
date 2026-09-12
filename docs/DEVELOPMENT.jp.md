@@ -85,7 +85,7 @@ swift test --package-path Packages/SSHCore --filter SSHIntegrationTests
 2026-09-12、Xcode 26.5 / Swift 6.3.2 で検証:
 
 - iPhone / iPad 対象の iOS Simulator 向けアプリビルドが成功。
-- 個人チーム署名の Debug ビルドを署名検証し、iPhone 17e / iOS 26.6.1 にインストール済み。初回起動には端末で開発者の信頼操作が必要。
+- 個人チーム署名の Debug ビルドを署名検証し、iPhone 17e / iOS 26.6.1 にインストール。開発者証明書の信頼後に起動でき、起動後もアプリのプロセスが動作していることを確認。実機での SSH 接続・操作検証は未実施。
 - SSHCore: 単体・プロトコルテスト 11 件と実 OpenSSH 結合テストが成功。
 - TerminalCore: 18 テスト / パラメータ化を含む 19 ケースが成功。
 - アプリ接続状態: iPhone 17 / iOS 26.5 Simulator で 7 テストが成功。
