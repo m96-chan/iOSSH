@@ -38,24 +38,23 @@ struct TerminalScreen: View {
             }
             surface
         }
-        .navigationTitle(model.phase == .checking ? "Checking connection…" : model.host.name)
+        .navigationTitle(isWorkspace ? "" : model.phase == .checking ? "Checking connection…" : model.host.name)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             if !isWorkspace {
                 ToolbarItem(placement: .topBarLeading) { Button("Close", systemImage: "xmark", action: onClose) }
-            }
-            ToolbarItem(placement: .topBarTrailing) {
-                Menu {
-                    Button("Appearance", systemImage: "textformat.size") { present(.settings) }
-                    Button("Scroll to Bottom", systemImage: "arrow.down.to.line") { model.engine.scrollToBottom() }
-                    if model.phase == .connected || model.phase == .checking {
-                        Button("Disconnect", systemImage: "network.slash") { Task { await model.close() } }
-                    } else if model.phase != .connecting, model.host.authentication != .tailscale {
-                        Button("Enter Credentials", systemImage: "key") { Task { await model.connect(enterCredential: true) } }
-                    }
-                    if isWorkspace { Button("Close Session", systemImage: "xmark", action: onClose) }
-                } label: { Label("Terminal options", systemImage: "ellipsis.circle") }
-                .accessibilityIdentifier("terminalOptions")
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        Button("Appearance", systemImage: "textformat.size") { present(.settings) }
+                        Button("Scroll to Bottom", systemImage: "arrow.down.to.line") { model.engine.scrollToBottom() }
+                        if model.phase == .connected || model.phase == .checking {
+                            Button("Disconnect", systemImage: "network.slash") { Task { await model.close() } }
+                        } else if model.phase != .connecting, model.host.authentication != .tailscale {
+                            Button("Enter Credentials", systemImage: "key") { Task { await model.connect(enterCredential: true) } }
+                        }
+                    } label: { Label("Terminal options", systemImage: "ellipsis.circle") }
+                    .accessibilityIdentifier("terminalOptions")
+                }
             }
         }
         .sheet(item: $activeSheet, onDismiss: sheetDidDismiss) { item in
@@ -103,9 +102,9 @@ struct TerminalScreen: View {
         }
     }
 
-    private var surface: some View {
+    @ViewBuilder private var surface: some View {
         let inputAttempt = model.connectionAttemptID
-        return TerminalView(snapshot: model.snapshot,
+        let terminal = TerminalView(snapshot: model.snapshot,
                          configuration: TerminalConfiguration(fontSize: fontSize,
                             fontName: TerminalFontLibrary.shared.resolvedFontName(selectedFontName), theme: theme),
                          onInput: { model.sendUserInput($0, attemptID: inputAttempt) },
@@ -119,6 +118,21 @@ struct TerminalScreen: View {
                          focusRequest: allowsAuthentication && activeSheet == nil ? localFocusRequest : nil,
                          onWorkspaceCommand: terminalWorkspaceCommand)
                 .accessibilityIdentifier("terminal")
+
+        if isWorkspace {
+            terminal
+                // Keep the rectangular character grid inside the rounded surface.
+                .padding(6)
+                .background(Color(.sRGB,
+                                  red: Double((theme.background >> 16) & 255) / 255,
+                                  green: Double((theme.background >> 8) & 255) / 255,
+                                  blue: Double(theme.background & 255) / 255,
+                                  opacity: 1))
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .padding(6)
+        } else {
+            terminal
+        }
     }
 
     private var terminalWorkspaceCommand: (@MainActor (TerminalWorkspaceCommand) -> Void)? {
@@ -130,7 +144,14 @@ struct TerminalScreen: View {
     }
 
     @ViewBuilder private var status: some View {
-        if model.phase != .connected, model.phase != .checking {
+        if isWorkspace, model.phase == .checking {
+            HStack(spacing: 10) {
+                ProgressView().controlSize(.small)
+                Text("Checking connection…").font(.subheadline.weight(.medium))
+                Spacer()
+            }
+            .padding(12).background(.bar)
+        } else if model.phase != .connected, model.phase != .checking {
             HStack(spacing: 10) {
                 if model.phase == .connecting { ProgressView().controlSize(.small) }
                 VStack(alignment: .leading, spacing: 3) {

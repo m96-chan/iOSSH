@@ -109,9 +109,27 @@ struct HostListView: View {
             }
         }
         .navigationTitle("iOSSH")
+        .navigationBarTitleDisplayMode(isPad ? .inline : .automatic)
+        .toolbar(removing: .sidebarToggle)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if isPad {
+                Button { sheet = .settings } label: {
+                    Label("Settings", systemImage: "gearshape")
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("workspaceSettings")
+                .keyboardShortcut(",", modifiers: .command)
+                .padding(.horizontal, 20).padding(.vertical, 6)
+                .background(.bar)
+            }
+        }
         .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                Button("Settings", systemImage: "gearshape") { sheet = .settings }
+            if !isPad {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Settings", systemImage: "gearshape") { sheet = .settings }
+                }
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Button("Add Host", systemImage: "plus") { sheet = .newHost }.accessibilityIdentifier("addHost")
@@ -135,10 +153,7 @@ struct HostListView: View {
 
     private func workspaceDetail(compact: Bool) -> some View {
         VStack(spacing: 0) {
-            if !compact, !workspace.sessions.isEmpty {
-                SessionTabBar(workspace: workspace, onNew: newSession)
-                Divider()
-            }
+            workspaceHeader(compact: compact)
             if let model = workspace.selectedSession {
                 terminal(model)
             } else {
@@ -153,24 +168,54 @@ struct HostListView: View {
                     .buttonStyle(.borderedProminent).accessibilityIdentifier("openWorkspaceHost")
                     .keyboardShortcut("t", modifiers: .command)
                 }
-                .navigationTitle("iOSSH")
             }
         }
-        .toolbar {
-            if workspace.sessions.isEmpty {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Settings", systemImage: "gearshape") { sheet = .settings }
-                        .keyboardShortcut(",", modifiers: .command)
-                }
-            }
+        // The tab row is the detail's header, so a navigation title/bar must not
+        // reserve another row above it when the software keyboard is visible.
+        .toolbar(.hidden, for: .navigationBar)
+        .toolbar(removing: .sidebarToggle)
+    }
+
+    private func workspaceHeader(compact: Bool) -> some View {
+        HStack(spacing: 0) {
             if compact {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("Hosts", systemImage: "server.rack") { sheet = .hosts(newSession: false) }
-                        .accessibilityIdentifier("workspaceHosts")
+                Button { sheet = .hosts(newSession: false) } label: {
+                    Image(systemName: "server.rack").frame(width: 44, height: 44).contentShape(Rectangle())
                 }
-                ToolbarItem(placement: .topBarTrailing) { sessionPicker }
+                .accessibilityLabel("Hosts").accessibilityIdentifier("workspaceHosts")
+                Spacer(minLength: 0)
+                sessionPicker.frame(minHeight: 44).padding(.horizontal, 8)
+            } else {
+                Button {
+                    withAnimation { columnVisibility = columnVisibility == .detailOnly ? .all : .detailOnly }
+                } label: {
+                    Image(systemName: "sidebar.left").frame(width: 44, height: 44).contentShape(Rectangle())
+                }
+                .accessibilityLabel(columnVisibility == .detailOnly ? "Show Sidebar" : "Hide Sidebar")
+                .accessibilityIdentifier("workspaceSidebarToggle")
+                SessionTabBar(workspace: workspace, onNew: newSession)
             }
+            if let model = workspace.selectedSession { sessionOptions(model) }
         }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 6)
+        .frame(minHeight: 56)
+        .background(.bar)
+    }
+
+    private func sessionOptions(_ model: ConnectionModel) -> some View {
+        Menu {
+            Button("Scroll to Bottom", systemImage: "arrow.down.to.line") { model.engine.scrollToBottom() }
+            if model.phase == .connected || model.phase == .checking {
+                Button("Disconnect", systemImage: "network.slash") { Task { await model.close() } }
+            } else if model.phase != .connecting, model.host.authentication != .tailscale {
+                Button("Enter Credentials", systemImage: "key") { Task { await model.connect(enterCredential: true) } }
+            }
+            Button("Close Session", systemImage: "xmark") { workspace.close(id: model.id) }
+        } label: {
+            Image(systemName: "ellipsis.circle").frame(width: 44, height: 44)
+        }
+        .accessibilityLabel("Terminal options").accessibilityIdentifier("terminalOptions")
     }
 
     private func terminal(_ model: ConnectionModel) -> some View {
@@ -191,7 +236,13 @@ struct HostListView: View {
             }
             Divider()
             Button("New Session", systemImage: "plus") { newSession() }
-        } label: { Label("Sessions (\(workspace.sessions.count))", systemImage: "rectangle.on.rectangle") }
+        } label: {
+            Label(workspace.selectedSession.map { workspace.tabTitle(for: $0) } ?? "Sessions (0)",
+                  systemImage: "rectangle.on.rectangle")
+                .lineLimit(1).truncationMode(.middle)
+        }
+        .accessibilityLabel("Sessions (\(workspace.sessions.count))")
+        .accessibilityValue(workspace.selectedSession.map { "\(workspace.tabTitle(for: $0)), \($0.sessionStatus)" } ?? "No session selected")
         .accessibilityIdentifier("sessionPicker")
     }
 
@@ -208,6 +259,10 @@ struct HostListView: View {
                     .contextMenu {
                         Button("Edit Host", systemImage: "pencil") { sheet = .editHost(host) }
                     }
+                }
+                Section {
+                    Button("Settings", systemImage: "gearshape") { sheet = .settings }
+                        .accessibilityIdentifier("hostPickerSettings")
                 }
             }
             .navigationTitle(newSession ? "New Session" : "Hosts")
@@ -325,6 +380,7 @@ private struct SessionTabBar: View {
                                         .font(.subheadline).lineLimit(1)
                                         .frame(maxWidth: 240)
                                         .padding(.leading, 12).padding(.trailing, 4).frame(minHeight: 44)
+                                        .contentShape(Rectangle())
                                 }
                                 .accessibilityLabel("\(workspace.tabTitle(for: model)), \(model.sessionStatus)")
                                 .accessibilityValue(model.id == workspace.selectedID ? "Selected" : "")
@@ -354,9 +410,8 @@ private struct SessionTabBar: View {
                     if let id { withAnimation { proxy.scrollTo(id, anchor: .center) } }
                 }
             }
-            Button(action: onNew) { Image(systemName: "plus").frame(width: 44, height: 44) }
+            Button(action: onNew) { Image(systemName: "plus").frame(width: 44, height: 44).contentShape(Rectangle()) }
                 .accessibilityLabel("New Session").accessibilityIdentifier("newSession").padding(.trailing, 6)
         }
-        .background(.bar)
     }
 }
