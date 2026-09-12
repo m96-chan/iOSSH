@@ -22,6 +22,8 @@ make test-ui SIMULATOR='iPhone 17'  # Use an installed simulator's name
 
 The GitHub Actions workflow runs package tests, a simulator build, and app/UI tests. App unit tests cover connection cancellation, resize during authentication, early remote exit, queued input failures, and host-key decisions. UI tests cover host creation, editing, deletion, validation, settings, terminal startup, and credential cancellation. Use `--ui-testing` as an app launch argument only for tests; it selects an in-memory host store.
 
+The keyboard resize UI test dismisses the English keyboard's first-use QuickPath introduction before operating the accessory row. On a fresh simulator, this system overlay can cover buttons that still appear in the accessibility hierarchy. CI retains the `ios-test-results` artifact for seven days; extract it into a folder named `CI.xcresult` and open it in Xcode to inspect failures and screenshots.
+
 ## Debug build on a physical device
 
 Sign in to your Apple Account in Xcode's Settings > Accounts. Connect your iPhone or iPad to the Mac, unlock it, and accept the pairing prompt if shown. Enable [Developer Mode](https://developer.apple.com/documentation/xcode/enabling-developer-mode-on-a-device) on the device when Xcode requests it.

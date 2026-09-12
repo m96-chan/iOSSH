@@ -28,6 +28,7 @@ final class KeyboardResizeUITests: XCTestCase {
         for cycle in 0..<3 {
             terminal.tap()
             XCTAssertTrue(control.waitForExistence(timeout: 5))
+            if cycle == 0 { try await dismissKeyboardIntroduction(in: app) }
             try await waitUntil("The terminal should stop above the accessory") {
                 terminal.frame.height > 20 && terminal.frame.maxY <= control.frame.minY - 3
             }
@@ -80,12 +81,24 @@ final class KeyboardResizeUITests: XCTestCase {
         }
     }
 
+    @MainActor private func dismissKeyboardIntroduction(in app: XCUIApplication) async throws {
+        // A fresh English keyboard shows the QuickPath tutorial over the keys
+        // and accessory. Its hidden buttons still exist in the AX hierarchy.
+        let introduction = app.staticTexts.matching(NSPredicate(
+            format: "label BEGINSWITH %@", "Speed up your typing by sliding your finger"
+        )).firstMatch
+        guard introduction.waitForExistence(timeout: 2) else { return }
+        let proceed = app.buttons["Continue"]
+        try await waitUntil("The keyboard introduction must offer Continue") { proceed.isHittable }
+        proceed.tap()
+        XCTAssertTrue(introduction.waitForNonExistence(timeout: 5))
+    }
+
     @MainActor private func dismissAccessoryKeyboard(in app: XCUIApplication) async throws {
         let dismiss = app.buttons["terminalDismissKeyboard"]
         XCTAssertTrue(dismiss.waitForExistence(timeout: 5))
-        // On narrow phones the last accessory key needs a horizontal scroll.
-        // XCTest's implicit scroll-to-tap can leave it without a hit point, so
-        // perform the same swipe a user would before tapping the visible key.
+        // Reveal the last accessory key on narrow phones with the same
+        // horizontal swipe a user would perform before tapping it.
         let scroll = app.scrollViews.containing(.button, identifier: "terminalDismissKeyboard").firstMatch
         for _ in 0..<2 where !dismiss.isHittable {
             XCTAssertTrue(scroll.exists)

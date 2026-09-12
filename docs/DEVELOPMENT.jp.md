@@ -22,6 +22,8 @@ make test-ui SIMULATOR='iPhone 17'  # インストール済みの端末名を指
 
 GitHub Actions はパッケージ単体テスト、シミュレータ向けビルド、アプリ・UI テストを実行する。アプリ単体テストは接続キャンセル、認証中のリサイズ、接続直後の切断、入力失敗、ホスト鍵承認を確認する。UI テストはホストの追加・編集・削除、入力検証、設定、ターミナルの起動と認証キャンセルを確認する。起動引数 `--ui-testing` はテスト用で、ホスト情報をメモリ内に保存する。
 
+キーボードのリサイズ UI テストは、英語キーボードの初回 QuickPath 案内を閉じてから補助行を操作する。初期状態のシミュレータでは、この OS の案内がアクセシビリティ階層に残るボタンを覆うことがある。CI は `ios-test-results` 成果物を 7 日間保存する。`CI.xcresult` という名前のフォルダへ展開して Xcode で開くと、失敗の詳細とスクリーンショットを確認できる。
+
 ## 実機向け Debug ビルド
 
 Xcode の Settings > Accounts で Apple Account にサインインする。iPhone / iPad を Mac に接続してロックを解除し、ペアリングの確認が表示されたら承認する。Xcode から求められた場合は、端末の [デベロッパモード](https://developer.apple.com/documentation/xcode/enabling-developer-mode-on-a-device)を有効にする。
