@@ -22,6 +22,24 @@ make test-ui SIMULATOR='iPhone 17'  # インストール済みの端末名を指
 
 GitHub Actions はパッケージ単体テスト、シミュレータ向けビルド、アプリ・UI テストを実行する。アプリ単体テストは接続キャンセル、認証中のリサイズ、接続直後の切断、入力失敗、ホスト鍵承認を確認する。UI テストはホストの追加・編集・削除、入力検証、設定、ターミナルの起動と認証キャンセルを確認する。起動引数 `--ui-testing` はテスト用で、ホスト情報をメモリ内に保存する。
 
+## 実機向け Debug ビルド
+
+Xcode の Settings > Accounts で Apple Account にサインインする。iPhone / iPad を Mac に接続してロックを解除し、ペアリングの確認が表示されたら承認する。Xcode から求められた場合は、端末の [デベロッパモード](https://developer.apple.com/documentation/xcode/enabling-developer-mode-on-a-device)を有効にする。
+
+```sh
+xcrun devicectl list devices
+make device-build TEAM_ID=YOUR_TEAM_ID DEVICE_ID=YOUR_DEVICE_UDID
+make device-run DEVICE_ID=YOUR_DEVICE_UDID
+```
+
+`DEVICE_ID` には Xcode の Devices and Simulators に表示される端末の UDID を指定する。インストール・起動時の `devicectl` は独自の device identifier も受け付ける。個人チームでも実機への開発用インストールが可能。上記コマンドは自動プロビジョニングで署名済みの **Debug** ビルドを作成し、実機へインストールして起動する。必要に応じて選択した端末をチームへ登録する。チーム ID はビルド時に渡すため、共有プロジェクトには保存しない。アプリの生成先は `build/DeviceDerivedData/Build/Products/Debug-iphoneos/iOSSH.app`。
+
+ビルド済みアプリのインストールだけなら `make device-install DEVICE_ID=YOUR_DEVICE_UDID` を実行する。一時的に端末へ接続できない場合は `device-build` の `DEVICE_ID` を省略して汎用 iOS 向けにビルドできるが、インストールには対象端末を含む署名プロファイルが必要。[無料の個人チームのプロファイルは 7 日で期限切れになる](https://developer.apple.com/support/compare-memberships/)ため、その後は再ビルド・再インストールする。ブレークポイントや対話的なログ確認には、Xcode で同じチームと実機を選択し、iOSSH スキームを Debug 構成で実行する。
+
+実機では管理下のサーバーを登録し、ホスト鍵フィンガープリントを照合してシェルを開く。入力、画面回転、コピー・ペースト、保存済み資格情報の生体認証、バックグラウンド復帰後の再接続を確認する。ローカルネットワークへの接続時は iOS のネットワーク利用許可が表示される場合がある。
+
+インストールに成功しても開発者が未信頼で起動できない場合は、端末の「設定 → 一般 → VPN とデバイス管理」で、このビルドの署名に使用した Apple Account の開発者証明書を信頼する。確認や再起動の案内が表示されたら従う。Apple のサンプルにも[個人チームでの設定手順](https://developer.apple.com/documentation/swiftui/food-truck-building-a-swiftui-multiplatform-app)がある。
+
 ## 接続
 
 ホスト名 / IP、ポート、ユーザー名、認証方法を登録する。資格情報を空にして保存すると、接続時に入力を求める。接続画面で入力した資格情報は、**Save in Keychain** を有効にしない限りその接続だけに使用する。
@@ -67,6 +85,7 @@ swift test --package-path Packages/SSHCore --filter SSHIntegrationTests
 2026-09-12、Xcode 26.5 / Swift 6.3.2 で検証:
 
 - iPhone / iPad 対象の iOS Simulator 向けアプリビルドが成功。
+- 個人チーム署名の Debug ビルドを署名検証し、iPhone 17e / iOS 26.6.1 にインストール済み。初回起動には端末で開発者の信頼操作が必要。
 - SSHCore: 単体・プロトコルテスト 11 件と実 OpenSSH 結合テストが成功。
 - TerminalCore: 18 テスト / パラメータ化を含む 19 ケースが成功。
 - アプリ接続状態: iPhone 17 / iOS 26.5 Simulator で 7 テストが成功。
