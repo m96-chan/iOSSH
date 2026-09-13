@@ -4,7 +4,7 @@ import Foundation
 /// It does not retain engines, snapshots or image bytes. Callers must release
 /// snapshots when `TerminalEngine.onImageCacheInvalidated` fires so evicted data
 /// cannot remain alive in a hidden view's last frame.
-@MainActor public final class TerminalImageBudget {
+@TerminalParserActor public final class TerminalImageBudget {
     private struct Key: Hashable {
         let owner: ObjectIdentifier
         let imageID: UInt32
@@ -20,7 +20,9 @@ import Foundation
     private var retainedBytes = 0
     private var tick: UInt64 = 0
 
-    public init(maximumTotalBytes: Int = 64 * 1024 * 1024) {
+    /// The budget is created by the UI that owns a workspace, before it can await the
+    /// parser; only its contents are parser state.
+    public nonisolated init(maximumTotalBytes: Int = 64 * 1024 * 1024) {
         self.maximumTotalBytes = min(256 * 1024 * 1024, max(4, maximumTotalBytes))
     }
 

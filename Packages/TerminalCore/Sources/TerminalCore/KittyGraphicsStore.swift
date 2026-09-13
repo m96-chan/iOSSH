@@ -22,7 +22,7 @@ struct KittyGraphicsContext {
 
 /// Direct transfers only. No file, shared-memory, compression or animation
 /// paths are delegated to SwiftTerm's broader implementation.
-@MainActor final class KittyGraphicsStore {
+@TerminalParserActor final class KittyGraphicsStore {
     private struct Image {
         let data: Data
         let width, height: Int

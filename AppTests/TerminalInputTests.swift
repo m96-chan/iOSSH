@@ -252,15 +252,16 @@ struct TerminalInputTests {
     }
 
     @Test
-    func equalSnapshotRevisionsFromDifferentSessionsReplaceTheVisibleContent() {
+    func equalSnapshotRevisionsFromDifferentSessionsReplaceTheVisibleContent() async {
         let terminal = TerminalMetalView()
         defer { terminal.stop() }
-        let first = SwiftTermEngine(columns: 10, rows: 2)
-        let second = SwiftTermEngine(columns: 10, rows: 2)
-        first.feed(Data("first".utf8))
-        second.feed(Data("日本語".utf8))
-        let firstSnapshot = first.snapshot()
-        let secondSnapshot = second.snapshot()
+        let (firstSnapshot, secondSnapshot) = await onParser { () -> (TerminalSnapshot, TerminalSnapshot) in
+            let first = SwiftTermEngine(columns: 10, rows: 2)
+            let second = SwiftTermEngine(columns: 10, rows: 2)
+            first.feed(Data("first".utf8))
+            second.feed(Data("日本語".utf8))
+            return (first.snapshot(), second.snapshot())
+        }
         #expect(firstSnapshot.revision == secondSnapshot.revision)
         terminal.setInputIdentity(.init(sessionID: UUID(), attemptID: UUID()))
         terminal.update(firstSnapshot)

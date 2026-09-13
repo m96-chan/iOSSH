@@ -94,9 +94,9 @@ struct TerminalScreen: View {
                          onResize: { model.resize(columns: $0, rows: $1) },
                          onKey: { model.sendUserKey($0, attemptID: inputAttempt) },
                          onPaste: { model.pasteUserInput($0, attemptID: inputAttempt) },
-                         onScroll: { model.engine.scroll(by: $0) },
+                         onScroll: { model.terminal.scroll(by: $0) },
                          onCellSize: { model.setCellSize(width: $0, height: $1) },
-                         onCopySelection: { model.engine.text(in: $0) },
+                         onCopySelection: { await model.terminal.text(in: $0) },
                          inputIdentity: TerminalInputIdentity(sessionID: model.id, attemptID: model.connectionAttemptID),
                          focusRequest: allowsAuthentication && activeSheet == nil ? localFocusRequest : nil,
                          onWorkspaceCommand: terminalWorkspaceCommand)
@@ -157,7 +157,8 @@ struct TerminalScreen: View {
             Menu {
                 Button("Appearance", systemImage: "textformat.size") { present(.settings) }
                 Button("Import from Tailscale", systemImage: "arrow.down.circle") { present(.tailscaleImport) }
-                Button("Scroll to Bottom", systemImage: "arrow.down.to.line") { model.engine.scrollToBottom() }
+                Button("Scroll to Bottom", systemImage: "arrow.down.to.line") { model.terminal.scrollToBottom() }
+                Button("Show Terminal Size", systemImage: "ruler") { model.reportSizeIntoTerminal() }
                 if model.phase == .connected || model.phase == .checking {
                     Button("Disconnect", systemImage: "network.slash") { Task { await model.close() } }
                 } else if model.phase != .connecting, model.host.authentication != .tailscale {

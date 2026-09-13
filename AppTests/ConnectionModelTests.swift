@@ -122,8 +122,13 @@ struct ConnectionModelTests {
     }
 
     private func waitUntil(_ condition: @MainActor () -> Bool) async throws {
+        try await waitUntil { () async -> Bool in condition() }
+    }
+
+    /// The parser answers from its own isolation, so conditions that read it have to await.
+    private func waitUntil(_ condition: @MainActor () async -> Bool) async throws {
         let deadline = ContinuousClock.now.advanced(by: .seconds(5))
-        while !condition() {
+        while await !condition() {
             guard ContinuousClock.now < deadline else { throw WaitError.timedOut }
             try await Task.sleep(for: .milliseconds(1))
         }
@@ -141,7 +146,7 @@ struct ConnectionModelTests {
         })
         await model.connect()
         transport.onData?(Data((String(repeating: "earlier output\r\n", count: 40) + "prompt> partial input").utf8))
-        let before = model.engine.snapshot()
+        let before = await model.terminal.snapshot()
         let checking = Suspension()
         transport.checkSuspension = checking
         defer {
@@ -161,7 +166,7 @@ struct ConnectionModelTests {
         #expect(credentialLoads == 1)
         checking.release()
         try await waitUntil { model.phase == .connected }
-        let after = model.engine.snapshot()
+        let after = await model.terminal.snapshot()
         #expect(after.cells == before.cells)
         #expect(after.cursor == before.cursor)
         #expect(after.scrollbackCount == before.scrollbackCount)
@@ -175,7 +180,7 @@ struct ConnectionModelTests {
         let model = ConnectionModel(host: host, dependencies: dependencies(transport))
         await model.connect()
         transport.onData?(Data("existing output".utf8))
-        let before = model.engine.snapshot()
+        let before = await model.terminal.snapshot()
         model.enterBackground()
         transport.isConnected = false // Socket closure can precede delivery of its UI callback.
         model.enterForeground()
@@ -183,7 +188,7 @@ struct ConnectionModelTests {
         #expect(model.message?.contains("Reconnect") == true)
         #expect(transport.connectCalls == 1)
         #expect(transport.checkCalls == 0)
-        #expect(model.engine.snapshot().cells == before.cells)
+        #expect(await model.terminal.snapshot().cells == before.cells)
         model.enterForeground()
         model.connectOnFirstAppearance()
         await Task.yield()
@@ -438,6 +443,23 @@ struct ConnectionModelTests {
         await model.close()
     }
 
+    /// On a device the view measures a cell while the connection is still authenticating, so
+    /// the size the shell starts with is zero and the measurement has to reach it afterwards.
+    @Test(.timeLimit(.minutes(1)))
+    func theShellLearnsAPixelSizeMeasuredWhileItWasStillConnecting() async throws {
+        let transport = TestTransport()
+        let authenticating = Suspension()
+        transport.connectionSuspension = authenticating
+        let model = ConnectionModel(host: host, dependencies: dependencies(transport))
+        let connecting = Task { await model.connect() }
+        try await waitUntil { authenticating.arrived }
+        model.setCellSize(width: 10, height: 21)
+        authenticating.release()
+        await connecting.value
+        try await waitUntil { transport.pixelSizes.last == [800, 504] }
+        await model.close()
+    }
+
     /// Programs that draw images read the terminal's pixel size from the remote tty. The shell
     /// learns the measured cell size when it starts, and again when a font change alters the
     /// pixel size without changing the number of columns or rows.
@@ -585,19 +607,19 @@ struct ConnectionModelTests {
         let model = ConnectionModel(host: host, dependencies: dependencies(transport))
         await model.connect()
         transport.onData?(Data("visible output".utf8))
-        try await waitUntil { model.snapshot?.cells == model.engine.snapshot().cells }
+        try await waitUntil { await model.snapshot?.cells == model.terminal.snapshot().cells }
         let visibleCells = model.snapshot?.cells
-        let visibleSize = [model.engine.columns, model.engine.rows]
+        let visibleSize = [model.columns, model.rows]
         model.setVisible(false)
         transport.onData?(Data("\r\nhidden output 日本語".utf8))
         model.resize(columns: 20, rows: 10) // A stale renderer must not resize an inactive shell.
         try await Task.sleep(for: .milliseconds(30))
         #expect(model.snapshot?.cells == visibleCells)
-        #expect(model.engine.snapshot().cells != visibleCells)
-        #expect([model.engine.columns, model.engine.rows] == visibleSize)
+        #expect(await model.terminal.snapshot().cells != visibleCells)
+        #expect([model.columns, model.rows] == visibleSize)
         #expect(transport.isConnected)
         model.setVisible(true)
-        #expect(model.snapshot?.cells == model.engine.snapshot().cells)
+        try await waitUntil { await model.snapshot?.cells == model.terminal.snapshot().cells }
         model.resize(columns: 100, rows: 30)
         try await waitUntil { transport.sizes.last == [100, 30] }
         #expect(transport.connectCalls == 1)

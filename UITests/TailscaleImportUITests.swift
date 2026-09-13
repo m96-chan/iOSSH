@@ -97,8 +97,8 @@ final class TailscaleImportUITests: XCTestCase {
         XCTAssertTrue(app.buttons["shareTailscaleShortcut"].exists)
         let manual = app.descendants(matching: .any)
             .matching(identifier: "manualTailscaleShortcutSetup").firstMatch
-        let readyToExpand = XCTNSPredicateExpectation(predicate: NSPredicate(format: "hittable == true"), object: manual)
-        XCTAssertEqual(XCTWaiter.wait(for: [readyToExpand], timeout: 5), .completed)
+        XCTAssertTrue(manual.waitForExistence(timeout: 10))
+        bringIntoView(manual, in: app)
         manual.tap()
         // DisclosureGroup expands asynchronously; CI can snapshot its previous
         // collapsed accessibility tree immediately after synthesizing the tap.
@@ -138,6 +138,23 @@ final class TailscaleImportUITests: XCTestCase {
             if sidebar.exists && sidebar.label == "Show Sidebar" { sidebar.tap() }
         }
         XCTAssertTrue(importButton.waitForExistence(timeout: 5))
+    }
+
+    /// The sheet's manual instructions sit below its share button, so on a short screen they
+    /// exist without being reachable. A slow machine also needs time for the sheet to settle
+    /// before anything in it is hittable.
+    @MainActor
+    private func bringIntoView(_ element: XCUIElement, in app: XCUIApplication,
+                               file: StaticString = #filePath, line: UInt = #line) {
+        for _ in 0..<4 {
+            let deadline = ContinuousClock.now.advanced(by: .seconds(3))
+            while ContinuousClock.now < deadline {
+                if element.isHittable { return }
+                _ = element.waitForExistence(timeout: 0.2)
+            }
+            app.swipeUp()
+        }
+        XCTAssertTrue(element.isHittable, "\(element) never became reachable", file: file, line: line)
     }
 
     @MainActor

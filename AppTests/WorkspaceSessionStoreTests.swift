@@ -136,7 +136,7 @@ struct WorkspaceSessionStoreTests {
         try await waitUntil { store.sessions.allSatisfy { $0.phase == .connected } }
         let oldAttempt = second.connectionAttemptID
         let staleOutput = fixture.transports[1].onData
-        let oldCells = second.engine.snapshot().cells
+        let oldCells = await second.terminal.snapshot().cells
         store.close(id: second.id)
         #expect(second.connectionAttemptID != oldAttempt)
         #expect(second.phase == .disconnected)
@@ -144,7 +144,7 @@ struct WorkspaceSessionStoreTests {
         #expect(store.selectedID == first.id)
         #expect(first.isVisible)
         staleOutput?(Data("late data".utf8))
-        #expect(second.engine.snapshot().cells == oldCells)
+        #expect(await second.terminal.snapshot().cells == oldCells)
         try await waitUntil { fixture.transports[1].disconnectCalls == 1 }
         #expect(fixture.transports[0].isConnected)
         #expect(fixture.transports[0].disconnectCalls == 0)

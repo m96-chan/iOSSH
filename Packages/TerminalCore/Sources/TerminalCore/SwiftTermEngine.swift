@@ -2,11 +2,11 @@ import Foundation
 @preconcurrency import SwiftTerm
 
 /// UI-independent SwiftTerm adapter, pinned while libghostty-vt packaging is unavailable.
-@MainActor public final class SwiftTermEngine: TerminalEngine, @preconcurrency TerminalDelegate {
-    public var onOutput: ((Data) -> Void)?
-    public var onNeedsDisplay: (() -> Void)?
-    public var onImageCacheInvalidated: (() -> Void)?
-    public var onTitleChange: ((String) -> Void)?
+@TerminalParserActor public final class SwiftTermEngine: TerminalEngine, @preconcurrency TerminalDelegate {
+    public var onOutput: (@TerminalParserActor (Data) -> Void)?
+    public var onNeedsDisplay: (@TerminalParserActor () -> Void)?
+    public var onImageCacheInvalidated: (@TerminalParserActor () -> Void)?
+    public var onTitleChange: (@TerminalParserActor (String) -> Void)?
     public var columns: Int { terminal.cols }
     public var rows: Int { terminal.rows }
 

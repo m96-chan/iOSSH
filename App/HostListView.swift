@@ -84,7 +84,7 @@ struct HostListView: View {
         .onChange(of: tailscaleInbox.request?.id, initial: true) { _, _ in presentTailscaleImportIfNeeded() }
         .onChange(of: workspace.selectedID) { _, _ in presentTailscaleImportIfNeeded() }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in
-            workspace.imageBudget.removeAll()
+            Task { await workspace.imageBudget.removeAll() }
         }
     }
 
@@ -222,7 +222,8 @@ struct HostListView: View {
 
     private func sessionOptions(_ model: ConnectionModel) -> some View {
         Menu {
-            Button("Scroll to Bottom", systemImage: "arrow.down.to.line") { model.engine.scrollToBottom() }
+            Button("Scroll to Bottom", systemImage: "arrow.down.to.line") { model.terminal.scrollToBottom() }
+            Button("Show Terminal Size", systemImage: "ruler") { model.reportSizeIntoTerminal() }
             if model.phase == .connected || model.phase == .checking {
                 Button("Disconnect", systemImage: "network.slash") { Task { await model.close() } }
             } else if model.phase != .connecting, model.host.authentication != .tailscale {

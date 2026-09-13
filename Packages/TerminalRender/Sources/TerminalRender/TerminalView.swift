@@ -30,7 +30,7 @@ public struct TerminalView: UIViewRepresentable {
     public var onPaste: (@MainActor (String) -> Void)?
     public var onScroll: (@MainActor (Int) -> Void)?
     public var onCellSize: (@MainActor (Int, Int) -> Void)?
-    public var onCopySelection: (@MainActor (TerminalSelection) -> String)?
+    public var onCopySelection: (@MainActor (TerminalSelection) async -> String)?
     public var inputIdentity: TerminalInputIdentity?
     public var focusRequest: UUID?
     public var onWorkspaceCommand: (@MainActor (TerminalWorkspaceCommand) -> Void)?
@@ -42,7 +42,7 @@ public struct TerminalView: UIViewRepresentable {
                 onPaste: (@MainActor (String) -> Void)? = nil,
                 onScroll: (@MainActor (Int) -> Void)? = nil,
                 onCellSize: (@MainActor (Int, Int) -> Void)? = nil,
-                onCopySelection: (@MainActor (TerminalSelection) -> String)? = nil,
+                onCopySelection: (@MainActor (TerminalSelection) async -> String)? = nil,
                 inputIdentity: TerminalInputIdentity? = nil,
                 focusRequest: UUID? = nil,
                 onWorkspaceCommand: (@MainActor (TerminalWorkspaceCommand) -> Void)? = nil) {
@@ -96,7 +96,7 @@ public final class TerminalMetalView: MTKView, UIKeyInput, @preconcurrency UIEdi
     public var onPaste: (@MainActor (String) -> Void)?
     public var onScroll: (@MainActor (Int) -> Void)?
     public var onCellSize: (@MainActor (Int, Int) -> Void)?
-    public var onCopySelection: (@MainActor (TerminalSelection) -> String)?
+    public var onCopySelection: (@MainActor (TerminalSelection) async -> String)?
     public var onWorkspaceCommand: (@MainActor (TerminalWorkspaceCommand) -> Void)? {
         didSet {
             inputProxy.onWorkspaceCommand = onWorkspaceCommand == nil ? nil : { [weak self] command in
@@ -558,7 +558,9 @@ public final class TerminalMetalView: MTKView, UIKeyInput, @preconcurrency UIEdi
                 start: TerminalPosition(column: range.lowerBound % snapshot.columns, row: range.lowerBound / snapshot.columns),
                 end: TerminalPosition(column: range.upperBound % snapshot.columns + 1, row: range.upperBound / snapshot.columns)
             )
-            UIPasteboard.general.string = onCopySelection(selection)
+            // The text comes from the parser, which answers after the output queued ahead of
+            // this call. Copying a selection is not on the drawing path, so it can wait.
+            Task { UIPasteboard.general.string = await onCopySelection(selection) }
             return
         }
         var result: [String] = []

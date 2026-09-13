@@ -30,7 +30,7 @@ final class WorkspaceLayoutTests: XCTestCase {
         }
         let sessionIDs = workspace.sessions.map(\.id)
         let attempts = workspace.sessions.map(\.connectionAttemptID)
-        let engineIDs = workspace.sessions.map { ObjectIdentifier($0.engine) }
+        let engineIDs = workspace.sessions.map { ObjectIdentifier($0.terminal) }
         let selected = try XCTUnwrap(workspace.selectedSession)
         let originalSelection = selected.id
 
@@ -74,11 +74,11 @@ final class WorkspaceLayoutTests: XCTestCase {
                       terminal.accessibilityValue?.contains(marker) == true,
                       let model = workspace.selectedSession,
                       let transport = fixture.transport(for: marker),
-                      transport.lastSize == CGSize(width: model.engine.columns, height: model.engine.rows) else {
+                      transport.lastSize == CGSize(width: model.columns, height: model.rows) else {
                     stablePasses = 0
                     return false
                 }
-                let geometry = "\(terminal.frame)|\(model.engine.columns)x\(model.engine.rows)"
+                let geometry = "\(terminal.frame)|\(model.columns)x\(model.rows)"
                 stablePasses = geometry == lastGeometry ? stablePasses + 1 : 0
                 lastGeometry = geometry
                 return stablePasses >= 3
@@ -87,17 +87,17 @@ final class WorkspaceLayoutTests: XCTestCase {
         }
 
         let wide = try await layout(CGSize(width: 1000, height: 700), marker: "shell-3")
-        let wideColumns = selected.engine.columns
+        let wideColumns = selected.columns
         let wideWidth = wide.bounds.width
         XCTAssertGreaterThan(wideColumns, 20)
-        let hiddenSizes = workspace.sessions.prefix(2).map { CGSize(width: $0.engine.columns, height: $0.engine.rows) }
+        let hiddenSizes = workspace.sessions.prefix(2).map { CGSize(width: $0.columns, height: $0.rows) }
 
         let compact = try await layout(CGSize(width: 600, height: 700), marker: "shell-3")
         let compactWidth = compact.bounds.width
         XCTAssertLessThan(compact.bounds.width, wideWidth)
-        XCTAssertLessThan(selected.engine.columns, wideColumns)
+        XCTAssertLessThan(selected.columns, wideColumns)
         XCTAssertEqual(workspace.selectedID, originalSelection)
-        XCTAssertEqual(workspace.sessions.prefix(2).map { CGSize(width: $0.engine.columns, height: $0.engine.rows) }, hiddenSizes)
+        XCTAssertEqual(workspace.sessions.prefix(2).map { CGSize(width: $0.columns, height: $0.rows) }, hiddenSizes)
         if compact !== wide { XCTAssertNil(wide.delegate, "A replaced native terminal must release its renderer") }
 
         // Switch repeatedly at the same narrow width. The native input view should
@@ -106,25 +106,25 @@ final class WorkspaceLayoutTests: XCTestCase {
         workspace.select(id: first.id)
         let firstTerminal = try await layout(CGSize(width: 600, height: 700), marker: "shell-1")
         XCTAssertTrue(firstTerminal === compact)
-        let firstSize = CGSize(width: first.engine.columns, height: first.engine.rows)
+        let firstSize = CGSize(width: first.columns, height: first.rows)
         workspace.select(id: selected.id)
         let selectedTerminal = try await layout(CGSize(width: 600, height: 700), marker: "shell-3")
         XCTAssertTrue(selectedTerminal === compact)
-        XCTAssertEqual(CGSize(width: first.engine.columns, height: first.engine.rows), firstSize)
+        XCTAssertEqual(CGSize(width: first.columns, height: first.rows), firstSize)
 
         let expanded = try await layout(CGSize(width: 1000, height: 700), marker: "shell-3")
         XCTAssertGreaterThan(expanded.bounds.width, compactWidth)
-        XCTAssertEqual(selected.engine.columns, wideColumns)
-        let landscapeRows = selected.engine.rows
+        XCTAssertEqual(selected.columns, wideColumns)
+        let landscapeRows = selected.rows
         _ = try await layout(CGSize(width: 760, height: 1000), marker: "shell-3")
-        XCTAssertGreaterThan(selected.engine.rows, landscapeRows)
-        XCTAssertLessThan(selected.engine.columns, wideColumns)
+        XCTAssertGreaterThan(selected.rows, landscapeRows)
+        XCTAssertLessThan(selected.columns, wideColumns)
         _ = try await layout(CGSize(width: 1000, height: 700), marker: "shell-3")
-        XCTAssertEqual(selected.engine.columns, wideColumns)
+        XCTAssertEqual(selected.columns, wideColumns)
 
         XCTAssertEqual(workspace.sessions.map(\.id), sessionIDs)
         XCTAssertEqual(workspace.sessions.map(\.connectionAttemptID), attempts)
-        XCTAssertEqual(workspace.sessions.map { ObjectIdentifier($0.engine) }, engineIDs)
+        XCTAssertEqual(workspace.sessions.map { ObjectIdentifier($0.terminal) }, engineIDs)
         XCTAssertEqual(workspace.selectedID, originalSelection)
         XCTAssertEqual(workspace.sessions.filter(\.isVisible).map(\.id), [originalSelection])
         XCTAssertEqual(fixture.transports.count, 3)
