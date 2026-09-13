@@ -24,41 +24,18 @@ struct TerminalScreen: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            status
-            if model.phase == .connecting, model.isAuthenticationDeferred, model.needsAuthenticationAttention {
-                HStack {
-                    Label("This session needs your attention", systemImage: "exclamationmark.circle")
-                        .font(.subheadline)
-                    Spacer()
-                    Button("Continue") { model.resumeAuthentication(); presentAuthentication() }
-                        .accessibilityIdentifier("resumeAuthentication")
-                }
-                .padding(12).background(.bar)
-            } else if model.phase == .connecting, !model.authenticationBanner.isEmpty {
-                authenticationBanner
-            }
+            // The single-session screen floats these over the grid instead. Leaving
+            // them in the layout makes the terminal grow by one row the moment a
+            // connection succeeds and the row disappears.
+            if isWorkspace { connectionHeaders }
             surface
         }
-        .navigationTitle(isWorkspace ? "" : model.phase == .checking ? "Checking connection…" : model.host.name)
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            if !isWorkspace {
-                ToolbarItem(placement: .topBarLeading) { Button("Close", systemImage: "xmark", action: onClose) }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Menu {
-                        Button("Appearance", systemImage: "textformat.size") { present(.settings) }
-                        Button("Import from Tailscale", systemImage: "arrow.down.circle") { present(.tailscaleImport) }
-                        Button("Scroll to Bottom", systemImage: "arrow.down.to.line") { model.engine.scrollToBottom() }
-                        if model.phase == .connected || model.phase == .checking {
-                            Button("Disconnect", systemImage: "network.slash") { Task { await model.close() } }
-                        } else if model.phase != .connecting, model.host.authentication != .tailscale {
-                            Button("Enter Credentials", systemImage: "key") { Task { await model.connect(enterCredential: true) } }
-                        }
-                    } label: { Label("Terminal options", systemImage: "ellipsis.circle") }
-                    .accessibilityIdentifier("terminalOptions")
-                }
-            }
-        }
+        // The single-session screen gives the whole display to the grid: its controls
+        // float over the terminal instead of reserving a navigation bar row, and the
+        // terminal colour runs under the status bar.
+        .background { if !isWorkspace { color(theme.background).ignoresSafeArea() } }
+        .toolbar(.hidden, for: .navigationBar)
+        .preferredColorScheme(isWorkspace ? nil : themeName == "light" ? .light : .dark)
         .sheet(item: $activeSheet, onDismiss: sheetDidDismiss) { item in
             switch item.content {
             case .settings: SettingsView()
@@ -129,16 +106,115 @@ struct TerminalScreen: View {
             terminal
                 // Keep the rectangular character grid inside the rounded surface.
                 .padding(6)
-                .background(Color(.sRGB,
-                                  red: Double((theme.background >> 16) & 255) / 255,
-                                  green: Double((theme.background >> 8) & 255) / 255,
-                                  blue: Double(theme.background & 255) / 255,
-                                  opacity: 1))
+                .background(color(theme.background))
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .padding(6)
         } else {
-            terminal
+            terminal.overlay(alignment: .top) {
+                VStack(spacing: 8) {
+                    floatingControls
+                    VStack(spacing: 0) { connectionHeaders }
+                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .shadow(color: .black.opacity(0.22), radius: 6, y: 2)
+                        .padding(.horizontal, 10)
+                }
+            }
         }
+    }
+
+    @ViewBuilder private var connectionHeaders: some View {
+        status
+        if model.phase == .connecting, model.isAuthenticationDeferred, model.needsAuthenticationAttention {
+            HStack {
+                Label("This session needs your attention", systemImage: "exclamationmark.circle")
+                    .font(.subheadline)
+                Spacer()
+                Button("Continue") { model.resumeAuthentication(); presentAuthentication() }
+                    .accessibilityIdentifier("resumeAuthentication")
+            }
+            .padding(12).background(.bar)
+        } else if model.phase == .connecting, !model.authenticationBanner.isEmpty {
+            authenticationBanner
+        }
+    }
+
+    /// Floating chrome for the single-session screen: the session badge and the
+    /// controls sit over the grid instead of reserving a navigation bar row.
+    private var floatingControls: some View {
+        HStack(spacing: 0) {
+            sessionBadge
+            // Output starts at the left of every row, so the controls sit
+            // together in the trailing corner.
+            Spacer(minLength: 8)
+            Button(action: onClose) { floatingControlChrome("xmark") }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Close")
+                .accessibilityIdentifier("closeSession")
+            Menu {
+                Button("Appearance", systemImage: "textformat.size") { present(.settings) }
+                Button("Import from Tailscale", systemImage: "arrow.down.circle") { present(.tailscaleImport) }
+                Button("Scroll to Bottom", systemImage: "arrow.down.to.line") { model.engine.scrollToBottom() }
+                if model.phase == .connected || model.phase == .checking {
+                    Button("Disconnect", systemImage: "network.slash") { Task { await model.close() } }
+                } else if model.phase != .connecting, model.host.authentication != .tailscale {
+                    Button("Enter Credentials", systemImage: "key") { Task { await model.connect(enterCredential: true) } }
+                }
+            } label: { floatingControlChrome("ellipsis") }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Terminal options")
+            .accessibilityIdentifier("terminalOptions")
+        }
+        .padding(.horizontal, 6)
+        .padding(.top, 4)
+    }
+
+    /// A round control drawn inside a full 44-point target. `Menu` only hit-tests
+    /// its label, so the frame and shape have to live in the label itself.
+    private func floatingControlChrome(_ systemImage: String) -> some View {
+        Image(systemName: systemImage)
+            .font(.system(size: 15, weight: .semibold))
+            .foregroundStyle(color(theme.foreground))
+            .frame(width: 44, height: 44)
+            .background {
+                Circle().fill(color(theme.background, opacity: 0.86))
+                    .overlay(Circle().fill(color(theme.foreground, opacity: 0.13)))
+                    .overlay(Circle().strokeBorder(color(theme.foreground, opacity: 0.14)))
+                    .shadow(color: .black.opacity(0.22), radius: 5, y: 1)
+                    .padding(4)
+            }
+            .contentShape(Circle())
+    }
+
+    private var sessionBadge: some View {
+        HStack(spacing: 7) {
+            Circle().fill(badgeTint).frame(width: 7, height: 7)
+            Text(model.phase == .checking ? "Checking connection…" : model.host.name)
+                .font(.footnote.weight(.semibold)).lineLimit(1)
+        }
+        .foregroundStyle(color(theme.foreground))
+        .padding(.horizontal, 12).padding(.vertical, 8)
+        .background {
+            Capsule().fill(color(theme.background, opacity: 0.86))
+                .overlay(Capsule().fill(color(theme.foreground, opacity: 0.13)))
+        }
+        .overlay(Capsule().strokeBorder(color(theme.foreground, opacity: 0.14)))
+        .accessibilityIdentifier("sessionBadge")
+    }
+
+    private var badgeTint: Color {
+        switch model.phase {
+        case .connected: .green
+        case .connecting, .checking, .idle: .orange
+        case .disconnected, .failed: .red
+        }
+    }
+
+    private func color(_ value: UInt32, opacity: Double = 1) -> Color {
+        Color(.sRGB,
+              red: Double((value >> 16) & 255) / 255,
+              green: Double((value >> 8) & 255) / 255,
+              blue: Double(value & 255) / 255,
+              opacity: opacity)
     }
 
     private var terminalWorkspaceCommand: (@MainActor (TerminalWorkspaceCommand) -> Void)? {
