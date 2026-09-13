@@ -58,7 +58,16 @@ final class TailscaleImportInbox {
               let callbackID,
               components.queryItems?.first(where: { $0.name == "request" })?.value == callbackID.uuidString else { return }
         switch url.path {
-        case "/error": message = "The shortcut couldn’t finish. Check its setup in Shortcuts, then try again."
+        case "/error":
+            let reported = components.queryItems?.first(where: { $0.name == "errorMessage" })?.value ?? ""
+            let readable = reported.unicodeScalars.filter {
+                !CharacterSet.controlCharacters.contains($0) || $0 == "\n"
+            }
+            let detail = String(String.UnicodeScalarView(readable))
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            message = detail.isEmpty
+                ? "The shortcut couldn’t finish. Open Shortcuts and run Import Tailscale Hosts directly to see which action failed."
+                : "Shortcuts reported:\n\(String(detail.prefix(1_000)))\n\nOpen Shortcuts and check Import Tailscale Hosts."
         case "/cancel": message = "Device retrieval was canceled."
         case "/complete":
             if request == nil || request?.id == requestIDBeforeFetch {

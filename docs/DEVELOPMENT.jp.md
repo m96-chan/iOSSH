@@ -75,6 +75,8 @@ check mode の承認メッセージは接続中に表示する。Tailscale の H
 
 受け取った候補はメモリ内で保持する。Cancel で破棄し、保存には明示的な選択とユーザー名が必要。SSH 接続中に受け取った場合もセッションを保持し、他のアプリ内シートや認証の終了後に表示する。入力は空行を除く 512 件・64 KiB まで。大きな tailnet は Find Devices のフィルターで分けて取得できる。ショートカットの失敗・キャンセル時は直前の候補一覧を確認できる。
 
+取得に失敗した場合は、ショートカットから返されたエラー説明を iOSSH に表示する。**Open Shortcuts** で **Import Tailscale Hosts** が存在するか確認し、直接実行して停止するアクションを調べる。見当たらなければ **Set Up Shortcut** から同梱ファイルを追加する。
+
 `TailscaleHostImportTests` では正規化、上限、重複、検証、保存失敗時の取消を、`TailscaleImportInboxTests` では App Intent の受信とコールバック処理を検証する。`TailscaleImportPresentationTests` は実際の UI を表示し、認証を優先することと、端末確認・セッション切替中の接続保持を確認する。`TailscaleImportUITests` は架空の端末を使い、iPhone / iPad で選択、保存される SSH 設定、キャンセル、セットアップを検証する。Tailscale 公式アクションの実行と初回許可は、両アプリをインストールした実機で確認する必要がある。
 
 ## iPad ワークスペース

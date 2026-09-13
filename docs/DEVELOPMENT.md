@@ -75,6 +75,8 @@ Discovery uses the Tailscale app's current account and requires no API token in 
 
 Shortcuts only stages candidates in memory. Cancel discards them; saving requires explicit selection and a username. An import received during an SSH session preserves that session and waits for other app sheets or authentication to finish. The input is limited to 512 nonempty entries and 64 KiB; larger tailnets can use Find Devices filters. A failed or canceled shortcut leaves the previous candidate list available for review.
 
+If fetching returns an error, iOSSH displays the error description supplied by Shortcuts. Use **Open Shortcuts**, confirm that **Import Tailscale Hosts** exists, and run it directly to identify the failing action. If it is missing, add the bundled file through **Set Up Shortcut** first.
+
 `TailscaleHostImportTests` covers normalization, limits, duplicates, validation, and failed-save cleanup; `TailscaleImportInboxTests` checks App Intent delivery and callback handling. `TailscaleImportPresentationTests` hosts the native UI to check authentication priority and retained shells while reviewing devices and changing sessions. `TailscaleImportUITests` exercises selection, saved SSH settings, cancellation, and setup on iPhone/iPad using synthetic devices. The official Tailscale action and first-run permission prompts require a physical-device check with both apps installed.
 
 ## iPad workspace

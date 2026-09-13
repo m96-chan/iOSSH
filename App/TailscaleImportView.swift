@@ -32,7 +32,12 @@ struct TailscaleImportView: View {
                 }
 
                 if let message = inbox.message {
-                    Section { Text(message).foregroundStyle(.secondary) }
+                    Section {
+                        Text(message).foregroundStyle(.secondary).textSelection(.enabled)
+                        Button("Open Shortcuts", systemImage: "arrow.up.forward.app") {
+                            openURL(URL(string: "shortcuts://")!)
+                        }
+                    }
                 }
 
                 if inbox.request != nil {

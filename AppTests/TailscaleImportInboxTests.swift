@@ -25,20 +25,31 @@ struct TailscaleImportInboxTests {
         #expect(!inbox.needsPresentation)
     }
 
-    @Test func onlyTheLatestShortcutCallbackIsAcceptedAndErrorsDoNotEchoExternalText() throws {
+    @Test func onlyTheLatestShortcutCallbackIsAcceptedAndReportsTheActualError() throws {
         let inbox = TailscaleImportInbox()
         let first = try callback("x-error", in: inbox.shortcutURL())
         let current = try callback("x-error", in: inbox.shortcutURL())
         inbox.handleCallback(first)
         #expect(inbox.message == nil)
         var untrusted = try #require(URLComponents(url: current, resolvingAgainstBaseURL: false))
-        untrusted.queryItems?.append(URLQueryItem(name: "errorMessage", value: "Untrusted external text"))
+        untrusted.queryItems?.append(URLQueryItem(name: "errorMessage", value: "ショートカットが見つかりません。"))
         inbox.handleCallback(try #require(untrusted.url))
-        #expect(inbox.message?.contains("couldn’t finish") == true)
-        #expect(inbox.message?.contains("Untrusted") == false)
+        #expect(inbox.message?.hasPrefix("Shortcuts reported:\nショートカットが見つかりません。") == true)
+        #expect(inbox.message?.contains("Open Shortcuts") == true)
         inbox.message = nil
         inbox.handleCallback(current)
         #expect(inbox.message == nil, "Callbacks must be consumed once")
+    }
+
+    @Test func errorDetailsAreBoundedAndMissingDetailsOfferDirectTroubleshooting() throws {
+        let inbox = TailscaleImportInbox()
+        var url = try #require(URLComponents(url: callback("x-error", in: inbox.shortcutURL()), resolvingAgainstBaseURL: false))
+        url.queryItems?.append(URLQueryItem(name: "errorMessage", value: "\u{0}" + String(repeating: "x", count: 2_000)))
+        inbox.handleCallback(try #require(url.url))
+        #expect(inbox.message?.contains("\u{0}") == false)
+        #expect(inbox.message?.filter({ $0 == "x" }).count == 1_000)
+        inbox.handleCallback(try callback("x-error", in: inbox.shortcutURL()))
+        #expect(inbox.message?.contains("run Import Tailscale Hosts directly") == true)
     }
 
     @Test func successfulCallbackRequiresANewListAndCancellationPreservesCandidates() throws {
