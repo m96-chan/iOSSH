@@ -1,0 +1,42 @@
+version: 2
+
+updates:
+  - package-ecosystem: "swift"
+    # These manifests own all remote dependencies. TerminalRender only uses
+    # the local TerminalCore package, so it needs no separate update job.
+    # The Xcode project also references local packages; refresh its
+    # project.xcworkspace/xcshareddata/swiftpm/Package.resolved when reviewing
+    # Swift updates so app builds use the resolved dependency versions too.
+    directories:
+      - "/Packages/SSHCore"
+      - "/Packages/TerminalCore"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Asia/Tokyo"
+    open-pull-requests-limit: 3
+    groups:
+      swift-minor-and-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+    # Major updates remain individual PRs for compatibility review.
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Asia/Tokyo"
+    open-pull-requests-limit: 2
+    groups:
+      actions-minor-and-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"

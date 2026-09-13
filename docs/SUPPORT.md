@@ -2,8 +2,8 @@
 
 English | [日本語](SUPPORT.jp.md)
 
-> Publication draft. Add the developer's chosen contact address before using this
-> page as the App Store Support URL.
+> Publication draft. Set this page's public URL before using it as the App Store
+> Support URL. The URL has not yet been provided.
 
 iOSSH is an SSH terminal for iPhone and iPad.
 
@@ -11,7 +11,7 @@ iOSSH is an SSH terminal for iPhone and iPad.
 
 Developer: Yusuke Harada
 
-Support email or contact form: **to be provided before publication**.
+Support email: [me+iossh@m96-chan.dev](mailto:me+iossh@m96-chan.dev).
 
 For a bug report, include your device model, iOS/iPadOS version, iOSSH version,
 and the steps that led to the problem. If you attach terminal output or a

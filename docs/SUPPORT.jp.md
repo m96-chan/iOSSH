@@ -2,7 +2,7 @@
 
 [English](SUPPORT.md) | 日本語
 
-> 公開用の草案です。App StoreのサポートURLとして使用する前に、開発者が指定した連絡先を設定してください。
+> 公開用の草案です。App StoreのサポートURLとして使用する前に、このページの公開URLを確定してください。URLはまだ提供されていません。
 
 iOSSHはiPhone・iPad向けのSSHターミナルです。
 
@@ -10,7 +10,7 @@ iOSSHはiPhone・iPad向けのSSHターミナルです。
 
 開発者：Yusuke Harada
 
-問い合わせメールまたはフォーム：**公開前に設定予定**。
+問い合わせメール：[me+iossh@m96-chan.dev](mailto:me+iossh@m96-chan.dev)。
 
 不具合の報告には、端末名、iOS・iPadOSのバージョン、iOSSHのバージョン、問題が発生するまでの操作を添えてください。端末出力やスクリーンショットを添付する場合は、パスワード、秘密鍵、私用サーバーの情報を除いてください。
 
