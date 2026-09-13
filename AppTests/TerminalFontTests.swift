@@ -85,7 +85,7 @@ struct TerminalFontTests {
         #expect(abs(try italic.slant()) > 1.5)
     }
 
-    @Test
+    @Test @TerminalParserActor
     func promptCellsKeepUnicodeWidthsAndWrapAtTheDeclaredColumns() {
         let engine = SwiftTermEngine(columns: 16, rows: 3)
         // 1 + 2 + 2 + 1 + 1 + 2 + 2 + 2 + 1 = 14 columns, followed by two ASCII cells.

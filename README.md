@@ -22,7 +22,7 @@ Rendering includes a CoreText glyph atlas, instanced Metal drawing, 24-bit color
 
 The bundled HackGen Console NF font provides Japanese and Starship/Nerd Font symbols at a default size of 9 pt. Noto Sans CJK JP is bundled as the explicit Japanese fallback for missing glyphs, including when using an imported font. Settings can import additional monospaced TTF/OTF fonts from Files for use inside iOSSH. Glyphs fit the terminal's cell widths, and the visible grid is updated around the keyboard and accessory row when returning to the app or reconnecting. Japanese input uses UIKit composition and sends text only after confirmation.
 
-VT parsing currently runs on `MainActor`. Dedicated parsing isolation, the libghostty-vt backend, Display P3 output, and physical-device 120Hz/power measurements remain follow-up work. Screen lock and backgrounding retain the current SSH session and terminal contents. Returning checks the existing connection and resumes the same shell when it is alive; reconnecting after connection loss opens a new shell. Use a remote multiplexer when shell continuity across connection loss is needed.
+VT parsing runs on its own `TerminalParserActor`, off the main actor, and hands the UI immutable snapshots. The libghostty-vt backend, Display P3 output, and physical-device 120Hz/power measurements remain follow-up work. Screen lock and backgrounding retain the current SSH session and terminal contents. Returning checks the existing connection and resumes the same shell when it is alive; reconnecting after connection loss opens a new shell. Use a remote multiplexer when shell continuity across connection loss is needed.
 
 See [development and validation notes](docs/DEVELOPMENT.md) for build commands, key formats, and test coverage.
 

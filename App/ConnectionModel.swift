@@ -21,6 +21,11 @@ protocol ConnectionTransport: AnyObject {
 
 extension SSHSession: ConnectionTransport {}
 
+/// Lets the parser's callbacks reach the model without the model escaping its own init.
+@MainActor private final class WeakModel: Sendable {
+    weak var model: ConnectionModel?
+}
+
 @MainActor @Observable
 final class ConnectionModel: Identifiable {
     @MainActor struct Dependencies {
@@ -53,7 +58,13 @@ final class ConnectionModel: Identifiable {
     /// A shell's identity is independent of its saved host, which can have multiple shells.
     let id = UUID()
     let host: SSHHost
-    let engine: any TerminalEngine
+    /// Serial access to this session's parser, which runs off the main actor. The UI only ever
+    /// sees the snapshots it hands back.
+    @ObservationIgnored let terminal: TerminalPipeline
+    /// The grid the parser was last asked for. Mirrored here because the PTY size is decided on
+    /// this side and the parser is no longer readable without awaiting it.
+    private(set) var columns = 80
+    private(set) var rows = 24
     /// The rendered cell size. Programs that draw images read the terminal's pixel size from
     /// the remote tty, so every window size sent to the PTY carries it. Zero until the view
     /// has measured a cell, which is the protocol's "unknown".
@@ -98,14 +109,19 @@ final class ConnectionModel: Identifiable {
     init(host: SSHHost, dependencies: Dependencies = .live, imageBudget: TerminalImageBudget? = nil) {
         self.host = host
         self.dependencies = dependencies
-        engine = SwiftTermEngine(columns: 80, rows: 24, imageBudget: imageBudget)
-        engine.onOutput = { [weak self] data in self?.send(data) }
-        engine.onNeedsDisplay = { [weak self] in self?.scheduleSnapshot() }
-        engine.onImageCacheInvalidated = { [weak self] in
-            self?.snapshot = nil
-            self?.scheduleSnapshot()
-        }
-        snapshot = engine.snapshot()
+        let box = WeakModel()
+        terminal = TerminalPipeline(columns: 80, rows: 24, imageBudget: imageBudget,
+                                    onOutput: { data, origin in
+            Task { @MainActor in box.model?.parserDidWrite(data, origin: origin) }
+        }, onNeedsDisplay: {
+            Task { @MainActor in box.model?.scheduleSnapshot() }
+        }, onImageCacheInvalidated: {
+            Task { @MainActor in
+                box.model?.snapshot = nil
+                box.model?.scheduleSnapshot()
+            }
+        }, onTitleChange: { _ in })
+        box.model = self
     }
 
     /// Owned by the model so presenting a sheet cannot cancel pending authentication.
@@ -165,7 +181,7 @@ final class ConnectionModel: Identifiable {
             transport.onData = { [weak self] data in
                 guard let self, self.attempt == token else { return }
                 self.lastOutputArrival = .now
-                self.engine.feed(data)
+                self.terminal.feed(data)
             }
             transport.onDisconnect = { [weak self] reason in
                 guard let self, self.attempt == token else { return }
@@ -181,10 +197,10 @@ final class ConnectionModel: Identifiable {
                 self.input?.finish()
                 self.writerTask?.cancel()
             }
-            engine.reset()
+            terminal.reset()
             startWriter(transport: transport, token: token)
             try await transport.connect(host: host, credential: credential,
-                                        columns: engine.columns, rows: engine.rows,
+                                        columns: columns, rows: rows,
                                         pixelWidth: pixelSize.width,
                                         pixelHeight: pixelSize.height) { [weak self] challenge in
                 guard let self else { return false }
@@ -197,13 +213,12 @@ final class ConnectionModel: Identifiable {
             guard transport.isConnected else { return }
             // Layout can change while authentication or the trust prompt is in progress.
             while true {
-                let columns = engine.columns
-                let rows = engine.rows
+                let sent = [columns, rows]
                 let pixels = pixelSize
                 try await transport.resize(columns: columns, rows: rows,
                                            pixelWidth: pixels.width, pixelHeight: pixels.height)
                 guard attempt == token, transport.isConnected, !Task.isCancelled else { return }
-                if columns == engine.columns, rows == engine.rows, pixels == pixelSize { break }
+                if sent == [columns, rows], pixels == pixelSize { break }
             }
             phase = .connected
             authenticationBanner = ""
@@ -264,7 +279,7 @@ final class ConnectionModel: Identifiable {
         inputGeneration = UUID()
         isVisible = visible
         if visible, !isInBackground {
-            snapshot = engine.snapshot()
+            scheduleSnapshot()
         } else {
             snapshotTask?.cancel()
             snapshotTask = nil
@@ -278,13 +293,13 @@ final class ConnectionModel: Identifiable {
         cancelForegroundCheck()
         snapshotTask?.cancel()
         snapshotTask = nil
-        // Keep the shell, terminal engine, credentials, and any pending trust/authentication.
+        // Keep the shell, parser state, credentials, and any pending trust/authentication.
         // iOS may suspend this process; no background execution entitlement is needed.
     }
 
     func enterForeground() {
         isInBackground = false
-        if isVisible { snapshot = engine.snapshot() }
+        if isVisible { scheduleSnapshot() }
         guard phase == .connected || phase == .checking else { return }
         guard foregroundCheck == nil else { return }
         guard needsConnectionCheck, let transport = session else { return }
@@ -309,17 +324,16 @@ final class ConnectionModel: Identifiable {
             // Changes while locked/checking are sent to the existing PTY, never a new shell.
             while true {
                 guard transport.isConnected else { throw SSHSessionError.disconnected }
-                let columns = engine.columns
-                let rows = engine.rows
+                let sent = [columns, rows]
                 let pixels = pixelSize
                 try await transport.resize(columns: columns, rows: rows,
                                            pixelWidth: pixels.width, pixelHeight: pixels.height)
                 guard isCurrentForegroundCheck(token: token, checkID: checkID) else { return }
-                if columns == engine.columns, rows == engine.rows, pixels == pixelSize { break }
+                if sent == [columns, rows], pixels == pixelSize { break }
             }
             guard transport.isConnected else { throw SSHSessionError.disconnected }
             phase = .connected
-            if isVisible { snapshot = engine.snapshot() }
+            if isVisible { scheduleSnapshot() }
         } catch is CancellationError {
             // Another background transition or explicit close owns the current state.
         } catch {
@@ -348,7 +362,7 @@ final class ConnectionModel: Identifiable {
     }
 
     /// UI callbacks must capture the attempt before asynchronous paste/loading.
-    /// Protocol replies generated by a hidden engine still use `send` directly.
+    /// Protocol replies generated by a hidden parser still use `send` directly.
     func sendUserInput(_ data: Data, attemptID: UUID) {
         guard acceptsUserInput(attemptID: attemptID), !data.isEmpty else { return }
         enqueue(.data(data, userInputGeneration: inputGeneration))
@@ -356,16 +370,24 @@ final class ConnectionModel: Identifiable {
 
     func sendUserKey(_ key: TerminalKey, attemptID: UUID) {
         guard acceptsUserInput(attemptID: attemptID) else { return }
-        isSendingUserInput = true
-        defer { isSendingUserInput = false }
-        engine.sendKey(key)
+        terminal.sendKey(key, origin: inputGeneration)
     }
 
     func pasteUserInput(_ text: String, attemptID: UUID) {
         guard acceptsUserInput(attemptID: attemptID) else { return }
-        isSendingUserInput = true
-        defer { isSendingUserInput = false }
-        engine.paste(text)
+        terminal.paste(text, origin: inputGeneration)
+    }
+
+    /// Bytes the parser produced: a key or a paste carries the generation it was typed in, and
+    /// anything else is a reply to the shell.
+    private func parserDidWrite(_ data: Data, origin: UUID?) {
+        guard !data.isEmpty, session?.isConnected == true else { return }
+        guard let origin else {
+            enqueue(.data(data, userInputGeneration: nil))
+            return
+        }
+        guard acceptsUserInput(attemptID: attempt), inputGeneration == origin else { return }
+        enqueue(.data(data, userInputGeneration: origin))
     }
 
     private func acceptsUserInput(attemptID: UUID) -> Bool {
@@ -386,15 +408,18 @@ final class ConnectionModel: Identifiable {
 
     func resize(columns: Int, rows: Int) {
         guard isVisible else { return }
-        guard engine.columns != columns || engine.rows != rows else { return }
-        engine.resize(columns: columns, rows: rows)
+        let columns = min(1000, max(2, columns)), rows = min(1000, max(1, rows))
+        guard self.columns != columns || self.rows != rows else { return }
+        self.columns = columns
+        self.rows = rows
+        terminal.resize(columns: columns, rows: rows)
         sendSizeToShell()
     }
 
     /// The measured size of one cell in device pixels. Changing the font keeps the grid size
     /// but changes the terminal's pixel size, so the shell is told about that on its own.
     func setCellSize(width: Int, height: Int) {
-        engine.setCellSize(width: width, height: height)
+        terminal.setCellSize(width: width, height: height)
         guard cellPixelWidth != width || cellPixelHeight != height else { return }
         cellPixelWidth = width
         cellPixelHeight = height
@@ -402,7 +427,7 @@ final class ConnectionModel: Identifiable {
     }
 
     private var pixelSize: (width: Int, height: Int) {
-        (min(65535, engine.columns * cellPixelWidth), min(65535, engine.rows * cellPixelHeight))
+        (min(65535, columns * cellPixelWidth), min(65535, rows * cellPixelHeight))
     }
 
     private func sendSizeToShell() {
@@ -413,7 +438,7 @@ final class ConnectionModel: Identifiable {
     }
 
     func apply(theme: TerminalTheme) {
-        engine.setColors(foreground: theme.coreForeground, background: theme.coreBackground, palette: theme.corePalette)
+        terminal.setColors(foreground: theme.coreForeground, background: theme.coreBackground, palette: theme.corePalette)
     }
 
     func answerCredential(_ answer: CredentialAnswer?) {
@@ -534,7 +559,7 @@ final class ConnectionModel: Identifiable {
                     case .resize:
                         // A lock/check may have superseded a queued layout event.
                         guard !self.isInBackground, self.phase == .connected else { continue }
-                        try await transport.resize(columns: self.engine.columns, rows: self.engine.rows,
+                        try await transport.resize(columns: self.columns, rows: self.rows,
                                                    pixelWidth: self.pixelSize.width,
                                                    pixelHeight: self.pixelSize.height)
                     case .data(let data, let generation):
@@ -573,7 +598,9 @@ final class ConnectionModel: Identifiable {
                       arrival.duration(to: .now) < Self.snapshotInterval else { break }
             }
             guard !Task.isCancelled, let self, self.isVisible, !self.isInBackground else { return }
-            self.snapshot = self.engine.snapshot()
+            let value = await self.terminal.snapshot()
+            guard !Task.isCancelled, self.isVisible, !self.isInBackground else { return }
+            self.snapshot = value
             self.snapshotTask = nil
         }
     }

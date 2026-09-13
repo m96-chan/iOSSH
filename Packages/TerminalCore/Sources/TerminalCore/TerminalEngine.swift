@@ -118,16 +118,18 @@ public struct TerminalSelection: Sendable, Equatable {
 
 public enum TerminalKey: Sendable { case escape, tab, enter, backspace, up, down, left, right, home, end, pageUp, pageDown }
 
-/// Mutable parser state stays on MainActor; immutable snapshots can cross isolation boundaries.
+/// Mutable parser state stays on `TerminalParserActor`; immutable snapshots cross to the UI.
 /// libghostty-vt can replace this fallback without coupling the view to a parser implementation.
-@MainActor public protocol TerminalEngine: AnyObject {
-    var onOutput: ((Data) -> Void)? { get set }
-    var onNeedsDisplay: (() -> Void)? { get set }
+/// The callbacks run inside the parser's isolation, where the state they report on lives;
+/// a UI observer hops to its own actor from there.
+@TerminalParserActor public protocol TerminalEngine: AnyObject {
+    var onOutput: (@TerminalParserActor (Data) -> Void)? { get set }
+    var onNeedsDisplay: (@TerminalParserActor () -> Void)? { get set }
     /// Release any retained snapshot synchronously when decoded images are
     /// removed, including from another session's shared-budget allocation. Do not
     /// call back into the parser here; `onNeedsDisplay` follows for scheduling.
-    var onImageCacheInvalidated: (() -> Void)? { get set }
-    var onTitleChange: ((String) -> Void)? { get set }
+    var onImageCacheInvalidated: (@TerminalParserActor () -> Void)? { get set }
+    var onTitleChange: (@TerminalParserActor (String) -> Void)? { get set }
     var columns: Int { get }
     var rows: Int { get }
     func feed(_ data: Data)

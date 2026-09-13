@@ -37,12 +37,15 @@ final class TerminalResizeTests: XCTestCase {
             !observer.frames.isEmpty && !cellPublications.isEmpty && !gridPublications.isEmpty
         }
         let originalCellPixels = try XCTUnwrap(cellPublications.first)
-        let engine = SwiftTermEngine(columns: 20, rows: 3)
-        engine.feed(Data("\u{1b}[?25l日本語 >_\r\nfixed-size cells".utf8))
+        let idleSnapshot = await onParser { () -> TerminalSnapshot in
+            let engine = SwiftTermEngine(columns: 20, rows: 3)
+            engine.feed(Data("\u{1b}[?25l日本語 >_\r\nfixed-size cells".utf8))
+            return engine.snapshot()
+        }
 
         // The resize must repaint even before a connection has a snapshot, and
         // again when an idle shell sends no new revision or PTY acknowledgement.
-        for snapshot in [nil, engine.snapshot()] {
+        for snapshot in [nil, idleSnapshot] {
             terminal.update(snapshot)
             try await Task.sleep(for: .milliseconds(40))
             for nextHeight in [height - 200, height, height + 1, height] {
@@ -69,16 +72,19 @@ final class TerminalResizeTests: XCTestCase {
     }
 
     @MainActor
-    func testKeyboardSizedRenderTargetsKeepEveryExistingGlyphPixelUnstretched() throws {
+    func testKeyboardSizedRenderTargetsKeepEveryExistingGlyphPixelUnstretched() async throws {
         let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
         let scale: CGFloat = 3
         let renderer = try MetalRenderer(device: device, configuration: .init(fontSize: 16, cursorBlinks: false), scale: scale)
-        let engine = SwiftTermEngine(columns: 20, rows: 4)
-        engine.setColors(foreground: .init(red: 255, green: 255, blue: 255),
-                         background: .init(red: 0, green: 0, blue: 0),
-                         palette: Array(repeating: .init(red: 255, green: 255, blue: 255), count: 16))
-        engine.feed(Data("\u{1b}[?25l日本語 >_\r\nHackGen 123\r\n┌───┐".utf8))
-        renderer.update(engine.snapshot())
+        let fixture = await onParser { () -> TerminalSnapshot in
+            let engine = SwiftTermEngine(columns: 20, rows: 4)
+            engine.setColors(foreground: .init(red: 255, green: 255, blue: 255),
+                             background: .init(red: 0, green: 0, blue: 0),
+                             palette: Array(repeating: .init(red: 255, green: 255, blue: 255), count: 16))
+            engine.feed(Data("\u{1b}[?25l日本語 >_\r\nHackGen 123\r\n┌───┐".utf8))
+            return engine.snapshot()
+        }
+        renderer.update(fixture)
         let cellSize = renderer.cellSize
         let reference = try render(renderer, device: device, width: 900, height: 900)
         XCTAssertTrue(reference.contains { $0 != 0 && $0 != 255 }, "The fixture must contain antialiased glyphs")

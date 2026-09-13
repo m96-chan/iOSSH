@@ -40,7 +40,7 @@ final class TailscaleImportPresentationTests: XCTestCase {
         }
         let terminal = try XCTUnwrap(terminals(in: hosting.view).first)
         let originalAttempt = model.connectionAttemptID
-        let originalEngine = ObjectIdentifier(model.engine)
+        let originalParser = ObjectIdentifier(model.terminal)
         XCTAssertFalse(model.needsAuthenticationAttention,
                        "An import must also wait during the handshake before any authentication prompt exists")
 
@@ -73,7 +73,7 @@ final class TailscaleImportPresentationTests: XCTestCase {
         XCTAssertFalse(inbox.needsPresentation)
         XCTAssertEqual(inbox.request?.id, requestID)
         XCTAssertEqual(model.connectionAttemptID, originalAttempt)
-        XCTAssertEqual(ObjectIdentifier(model.engine), originalEngine)
+        XCTAssertEqual(ObjectIdentifier(model.terminal), originalParser)
         XCTAssertTrue(terminals(in: hosting.view).first === terminal)
 
         // Selecting another already connected shell updates the retained terminal
@@ -96,7 +96,7 @@ final class TailscaleImportPresentationTests: XCTestCase {
         XCTAssertEqual(inbox.request?.id, requestID)
         XCTAssertEqual(model.connectionAttemptID, originalAttempt)
         XCTAssertEqual(second.connectionAttemptID, secondAttempt)
-        XCTAssertEqual(ObjectIdentifier(model.engine), originalEngine)
+        XCTAssertEqual(ObjectIdentifier(model.terminal), originalParser)
         XCTAssertTrue(terminals(in: hosting.view).first === terminal)
         XCTAssertEqual(transport.trustDecisions, [true])
         for connection in [transport, secondTransport] {

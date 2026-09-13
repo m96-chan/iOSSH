@@ -7,20 +7,24 @@ import UIKit
 @MainActor
 struct TerminalOutputTests {
     @Test
-    func japaneseRightHalvesMatchTheirGlyphsAcrossFrameBuffers() throws {
+    func japaneseRightHalvesMatchTheirGlyphsAcrossFrameBuffers() async throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
         let configuration = TerminalConfiguration(fontSize: 16)
         let renderer = try MetalRenderer(device: device, configuration: configuration, scale: 3)
         let atlas = GlyphAtlas(device: device, configuration: configuration, scale: 3)
-        let engine = SwiftTermEngine(columns: 20, rows: 2)
-        engine.setColors(foreground: .init(red: 255, green: 255, blue: 255),
-                         background: .init(red: 0, green: 0, blue: 0),
-                         palette: Array(repeating: .init(red: 255, green: 255, blue: 255), count: 16))
-        // Hide the cursor and include a fullwidth blank between two Japanese runs.
-        engine.feed(Data("\u{1b}[?25l日本語　日本語ABC".utf8))
+        let engine = await onParser { SwiftTermEngine(columns: 20, rows: 2) }
+        await onParser {
+            engine.setColors(foreground: .init(red: 255, green: 255, blue: 255),
+                             background: .init(red: 0, green: 0, blue: 0),
+                             palette: Array(repeating: .init(red: 255, green: 255, blue: 255), count: 16))
+            // Hide the cursor and include a fullwidth blank between two Japanese runs.
+            engine.feed(Data("\u{1b}[?25l日本語　日本語ABC".utf8))
+        }
         for frame in 0..<5 {
-            if frame == 2 { engine.feed(Data("\r\u{1b}[1m仮名交じり文　出力".utf8)) }
-            let snapshot = engine.snapshot()
+            let snapshot = await onParser {
+                if frame == 2 { engine.feed(Data("\r\u{1b}[1m仮名交じり文　出力".utf8)) }
+                return engine.snapshot()
+            }
             renderer.update(snapshot)
             let pixels = try render(renderer, device: device, scale: 3)
             let cellWidth = Int((atlas.cellSize.width * 3).rounded())

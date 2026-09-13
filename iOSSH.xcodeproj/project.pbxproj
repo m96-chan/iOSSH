@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		01BA7E75EE871E15B772A475 /* ParserActorSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7C7327A6155161C2C7B09CE /* ParserActorSupport.swift */; };
 		09B00D9624EEB48DCF1CED77 /* ConnectionModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC618C3030669A58E650FC53 /* ConnectionModelTests.swift */; };
 		0A37B46631C09EB022B91999 /* WorkspaceSessionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C9A6999274AAB9CA7E0E5DF /* WorkspaceSessionStore.swift */; };
 		126F1F2E6A74A9F1358D33A7 /* TailscaleHostImport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A53EAFCE919B8B842360534F /* TailscaleHostImport.swift */; };
@@ -92,6 +93,7 @@
 		A820ABD787EFF5FD17D36CD0 /* iOSSHApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = iOSSHApp.swift; sourceTree = "<group>"; };
 		ABDE0513C54E763730592D8B /* ThirdPartyNotices.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = ThirdPartyNotices.txt; sourceTree = "<group>"; };
 		B77019520186EBCCB9A49939 /* TerminalFontTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalFontTests.swift; sourceTree = "<group>"; };
+		B7C7327A6155161C2C7B09CE /* ParserActorSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ParserActorSupport.swift; sourceTree = "<group>"; };
 		B938712F465427A4BB544D1E /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		BD652AE272B9A63048557543 /* WorkspaceLayoutTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceLayoutTests.swift; sourceTree = "<group>"; };
 		BF3D87F64507E681986AEBE8 /* TailscaleImportInbox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TailscaleImportInbox.swift; sourceTree = "<group>"; };
@@ -146,6 +148,7 @@
 			isa = PBXGroup;
 			children = (
 				FC618C3030669A58E650FC53 /* ConnectionModelTests.swift */,
+				B7C7327A6155161C2C7B09CE /* ParserActorSupport.swift */,
 				CEA5544B29897C3F1E2591D5 /* TailscaleHostImportTests.swift */,
 				65B1CB2968F3BCF2DEA5E2EC /* TailscaleImportInboxTests.swift */,
 				63EC633085171C49B8D95F72 /* TailscaleImportPresentationTests.swift */,
@@ -363,6 +366,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				09B00D9624EEB48DCF1CED77 /* ConnectionModelTests.swift in Sources */,
+				01BA7E75EE871E15B772A475 /* ParserActorSupport.swift in Sources */,
 				E299A2FA4BEE670E0E2B52B9 /* TailscaleHostImportTests.swift in Sources */,
 				915A3A7E7C7CE63EE678F12A /* TailscaleImportInboxTests.swift in Sources */,
 				8F4B8DAFEB8A0D194C6CF2C0 /* TailscaleImportPresentationTests.swift in Sources */,

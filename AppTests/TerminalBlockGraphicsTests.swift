@@ -59,12 +59,12 @@ struct TerminalBlockGraphicsTests {
     @Test(arguments: [9.0, 16.0], [2.0, 3.0])
     func swappingANSIForegroundAndBackgroundWithTheOppositeHalfBlockPreservesTheImage(
         fontSize: Double, scale: Double
-    ) throws {
+    ) async throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
         let renderer = try MetalRenderer(device: device, configuration: .init(fontSize: fontSize), scale: scale)
         let columns = 6, rows = 4
-        let upper = imageSnapshot(columns: columns, rows: rows, lowerBlock: false)
-        let lower = imageSnapshot(columns: columns, rows: rows, lowerBlock: true)
+        let upper = await imageSnapshot(columns: columns, rows: rows, lowerBlock: false)
+        let lower = await imageSnapshot(columns: columns, rows: rows, lowerBlock: true)
         let cellWidth = Int((renderer.cellSize.width * scale).rounded())
         let cellHeight = Int((renderer.cellSize.height * scale).rounded())
         let width = columns * cellWidth, height = rows * cellHeight
@@ -104,7 +104,7 @@ struct TerminalBlockGraphicsTests {
         }
     }
 
-    private func imageSnapshot(columns: Int, rows: Int, lowerBlock: Bool) -> TerminalSnapshot {
+    @TerminalParserActor private func imageSnapshot(columns: Int, rows: Int, lowerBlock: Bool) -> TerminalSnapshot {
         let engine = SwiftTermEngine(columns: columns, rows: rows)
         var ansi = "\u{1b}[?25l"
         for row in 0..<rows {
