@@ -27,6 +27,11 @@ struct SSHIntegrationTests {
             try await expectOutput(session, command: "printf 'iossh-%s\\n' 'integration-ok'\r", contains: "iossh-integration-ok")
             try await session.resize(columns: 111, rows: 41)
             try await expectOutput(session, command: "printf 'SIZE:'; stty size\r", contains: "SIZE:41 111")
+            // Sustained output must outrun terminal consumption without dropping bytes or closing
+            // the shell; the reader asks for each batch after the previous one is handed over.
+            try await expectOutput(session, command: "seq 1 200000; printf 'iossh-%s\\n' 'burst-done'\r",
+                                   contains: "iossh-burst-done", limit: 8 << 20, timeout: .seconds(60))
+            #expect(session.isConnected)
             await session.disconnect()
             #expect(!session.isConnected)
 
@@ -59,13 +64,14 @@ struct SSHIntegrationTests {
         #expect(try await iterator.next() != nil)
     }
 
-    @MainActor private func expectOutput(_ session: SSHSession, command: String, contains expected: String) async throws {
+    @MainActor private func expectOutput(_ session: SSHSession, command: String, contains expected: String,
+                                         limit: Int = 1_048_576, timeout duration: Duration = .seconds(10)) async throws {
         let (stream, continuation) = AsyncThrowingStream<Data, Error>.makeStream()
         session.onData = { continuation.yield($0) }
         session.onDisconnect = { _ in continuation.finish(throwing: SSHSessionError.disconnected) }
         let timeout = Task {
             do {
-                try await Task.sleep(for: .seconds(10))
+                try await Task.sleep(for: duration)
                 continuation.finish(throwing: SSHSessionError.connectionTimedOut)
             } catch {}
         }
@@ -78,11 +84,15 @@ struct SSHIntegrationTests {
         // Data slices can retain a nonzero startIndex; input must preserve their exact bytes.
         let slicedInput = Data(("discard" + command).utf8).dropFirst(7)
         try await session.write(slicedInput)
+        // Only the tail can hold the sentinel; keeping all of a large burst would dominate the test.
         var output = Data()
+        var received = 0
         for try await chunk in stream {
+            received += chunk.count
             output.append(chunk)
             if String(decoding: output, as: UTF8.self).contains(expected) { return }
-            guard output.count < 1_048_576 else { throw SSHSessionError.outputOverflow }
+            output = Data(output.suffix(expected.utf8.count * 2))
+            guard received < limit else { throw SSHSessionError.outputOverflow }
         }
         Issue.record("Expected terminal output was not received")
     }
