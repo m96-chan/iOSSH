@@ -26,6 +26,9 @@ SHA-256:
 
 ## Noto Sans CJK JP 2.004 fallback
 
+Copyright: © 2014-2021 Adobe (http://www.adobe.com/).
+This attribution is also preserved in each font's embedded copyright metadata.
+
 The Japanese-region Regular and Bold OpenType files are unmodified copies
 from the official Noto CJK repository, tag `Sans2.004`, commit
 `523d033d6cb47f4a80c58a35753646f5c3608a78`:
