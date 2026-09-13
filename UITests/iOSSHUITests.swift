@@ -2,6 +2,7 @@ import XCTest
 
 final class iOSSHUITests: XCTestCase {
     @MainActor func testJapaneseKanaKeyboardComposesAndConfirmsLocally() async throws {
+        try skipUnlessPhone("The kana keyboard this drives is the iPhone layout")
         let app = XCUIApplication()
         app.launchArguments = ["--ui-testing"]
         app.launch()
@@ -108,6 +109,13 @@ final class iOSSHUITests: XCTestCase {
         add(screenshot)
     }
 
+    /// The iPad workspace reaches the same behaviour through its own chrome, and its tests
+    /// guard the other way around. Without this, a full-suite run on an iPad fails on
+    /// controls that only the iPhone screen has.
+    @MainActor private func skipUnlessPhone(_ reason: String) throws {
+        guard UIDevice.current.userInterfaceIdiom == .phone else { throw XCTSkip(reason) }
+    }
+
     @MainActor private func assertTerminalIsAboveAccessory(_ app: XCUIApplication,
                                                            file: StaticString = #filePath, line: UInt = #line) async throws {
         let control = app.buttons["terminalAccessoryControl"]
@@ -124,6 +132,7 @@ final class iOSSHUITests: XCTestCase {
     }
 
     @MainActor func testTerminalConnectionCanBeCanceled() throws {
+        try skipUnlessPhone("Closing a session uses the iPhone screen's floating control")
         let app = XCUIApplication()
         app.launchArguments = ["--ui-testing"]
         app.launch()
@@ -150,6 +159,7 @@ final class iOSSHUITests: XCTestCase {
     }
 
     @MainActor func testHostCreationEditingAndDeletion() throws {
+        try skipUnlessPhone("Editing a host uses the iPhone host list, not the iPad sidebar")
         let app = XCUIApplication()
         app.launchArguments = ["--ui-testing"]
         app.launch()
