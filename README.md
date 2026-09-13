@@ -83,9 +83,11 @@ The iPad workspace is intended for editing on a remote server, following logs, a
 
 | Context | Navigation | Terminal area |
 | --- | --- | --- |
-| iPhone | Host list followed by the current single-session terminal screen | One terminal using the available screen; no persistent tab strip |
+| iPhone | Host list followed by the current single-session terminal screen, with no navigation bar: close and session actions float over the terminal | One terminal using the available screen; no persistent tab strip |
 | iPad with sufficient window width | Collapsible host sidebar, with connection tabs above the terminal | One large terminal beside the sidebar; hiding the sidebar expands it |
 | iPad in a narrow window | Host picker and session picker in the toolbar; sidebar and tab strip collapse | The selected terminal fills the available width; all open sessions remain available |
+
+The iPhone single-session screen has no navigation bar and extends the terminal colour to the screen edges, so no permanent row takes terminal height. Close and the session menu float over the grid as round buttons in the trailing corner, because output starts at the leading edge of every row; the destination name and connection state stay in a badge opposite them. The screen is modal and its close button is the only way out: there is no back gesture, so a mis-swipe cannot drop a live session.
 
 The detail area's top row combines sidebar controls, connection tabs, and session actions. There is no separate centered destination title, leaving more terminal height when the software keyboard is open. Settings sits at the bottom of the sidebar and is available from the **Hosts** picker in narrow windows. The terminal has rounded corners and a small inner inset to keep characters clear of the edges.
 

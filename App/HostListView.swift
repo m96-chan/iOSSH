@@ -45,7 +45,10 @@ struct HostListView: View {
                         get: { workspace.selectedSession != nil },
                         set: { if !$0, let id = workspace.selectedID { workspace.close(id: id) } }
                     )) {
-                        NavigationStack {
+                        // No navigation bar here: a NavigationStack lays out a bar
+                        // row and then hides it, jerking the terminal upward right
+                        // after the cover finishes presenting.
+                        Group {
                             if let model = workspace.selectedSession { terminal(model) }
                         }
                         .interactiveDismissDisabled()
