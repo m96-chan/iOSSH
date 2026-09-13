@@ -17,10 +17,14 @@ final class PTYHandler: ChannelInboundHandler, @unchecked Sendable {
     /// Shell output in arrival order. Reading it releases the next batch from the channel.
     let output: AsyncThrowingStream<Data, Error>
 
-    init(term: String, columns: Int, rows: Int, ready: EventLoopPromise<Void>) {
+    init(term: String, columns: Int, rows: Int, pixelWidth: Int, pixelHeight: Int,
+         ready: EventLoopPromise<Void>) {
+        // Programs that draw images read the pixel size from the remote tty's window size.
+        // Reporting zero makes them refuse to draw, so the cell size measured on this device
+        // travels with the grid size the shell is started with.
         self.request = .init(wantReply: true, term: term, terminalCharacterWidth: columns,
-                             terminalRowHeight: rows, terminalPixelWidth: 0, terminalPixelHeight: 0,
-                             terminalModes: .init([:]))
+                             terminalRowHeight: rows, terminalPixelWidth: pixelWidth,
+                             terminalPixelHeight: pixelHeight, terminalModes: .init([:]))
         self.ready = ready
         // Reads are demanded one batch at a time, so the stream only holds what the terminal has
         // been handed and has yet to consume. A bounded policy would instead discard bytes of a

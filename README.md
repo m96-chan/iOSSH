@@ -89,7 +89,7 @@ The iPad workspace is intended for editing on a remote server, following logs, a
 
 The iPhone single-session screen has no navigation bar and extends the terminal colour to the screen edges, so no permanent row takes terminal height. Close and the session menu float over the grid as round buttons in the trailing corner, because output starts at the leading edge of every row; the destination name and connection state stay in a badge opposite them. The screen is modal and its close button is the only way out: there is no back gesture, so a mis-swipe cannot drop a live session.
 
-The detail area's top row combines sidebar controls, connection tabs, and session actions. There is no separate centered destination title, leaving more terminal height when the software keyboard is open. Settings sits at the bottom of the sidebar and is available from the **Hosts** picker in narrow windows. The terminal has rounded corners and a small inner inset to keep characters clear of the edges.
+The detail area's top row combines sidebar controls, connection tabs, and session actions. There is no separate centered destination title, leaving more terminal height when the software keyboard is open. Settings sits at the bottom of the sidebar and is available from the **Hosts** picker in narrow windows. The terminal has rounded corners and a small inner inset to keep characters clear of the edges. Its bottom edge is level with the sidebar's Settings row, at the bottom of the safe area, so the grid reaches as far down as the sidebar's own content without running under the home indicator.
 
 ```text
 +------------------+-----------------------------------------------+
