@@ -144,6 +144,16 @@ struct TerminalFontTests {
         }
     }
 
+    /// Shell output assumes 80 columns, and the grid takes the full display width on an
+    /// iPhone. The narrowest supported portrait width is 375 points at 2×; recent phones
+    /// are 390 points at 3×. Cell widths round up to a device pixel, so a size that fits
+    /// on paper can still lose the column count on one of the two scales.
+    @Test(arguments: [(375.0, 2.0), (390.0, 3.0)])
+    func theInitialPhoneFontSizeKeepsEightyColumnsUpright(width: Double, scale: Double) throws {
+        let atlas = try atlas(fontSize: TerminalConfiguration.phoneFontSize, scale: CGFloat(scale))
+        #expect(Int(width / atlas.cellSize.width) >= 80)
+    }
+
     private func atlas(fontSize: CGFloat = 16, scale: CGFloat = 3) throws -> GlyphAtlas {
         let device = try #require(MTLCreateSystemDefaultDevice(), "Glyph rendering requires Metal")
         return GlyphAtlas(device: device, configuration: .init(fontSize: fontSize), scale: scale)

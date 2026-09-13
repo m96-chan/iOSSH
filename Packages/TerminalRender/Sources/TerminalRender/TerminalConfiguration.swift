@@ -32,6 +32,16 @@ public struct TerminalTheme: Equatable, Sendable {
 public struct TerminalConfiguration: Equatable, Sendable {
     public static let defaultFontSize: CGFloat = 9
 
+    /// Shell output assumes 80 columns, and an iPhone held upright is the narrowest
+    /// grid this app draws. At 8.5 pt a cell is 4.5 points wide at 2× and 4.667 at 3×,
+    /// which fits 83 columns into the 375-point and 390-point portrait widths; 9 pt
+    /// fits only 78. An iPad is wide enough for 80 columns at the larger size.
+    public static let phoneFontSize: CGFloat = 8.5
+
+    @MainActor public static var initialFontSize: CGFloat {
+        UIDevice.current.userInterfaceIdiom == .phone ? phoneFontSize : defaultFontSize
+    }
+
     public var fontSize: CGFloat
     public var fontName: String
     public var theme: TerminalTheme

@@ -4,7 +4,7 @@ import UniformTypeIdentifiers
 
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
-    @AppStorage("terminal.fontSize") private var fontSize = Double(TerminalConfiguration.defaultFontSize)
+    @AppStorage("terminal.fontSize") private var fontSize = Double(TerminalConfiguration.initialFontSize)
     @AppStorage("terminal.theme") private var theme = "dark"
     @AppStorage(TerminalFontLibrary.selectionKey) private var fontName = TerminalFont.postScriptName
     @State private var fontLibrary = TerminalFontLibrary.shared
@@ -20,7 +20,10 @@ struct SettingsView: View {
                         Text("Dark").tag("dark")
                         Text("Light").tag("light")
                     }
-                    Stepper("Font size: \(Int(fontSize)) pt", value: $fontSize, in: 9...32)
+                    // Half-point steps reach the 8.5 pt that fits 80 columns into an
+                    // upright iPhone; whole points there jump straight past it to 78 columns.
+                    Stepper("Font size: \(fontSize.formatted(.number.precision(.fractionLength(0...1)))) pt",
+                            value: $fontSize, in: 8...32, step: 0.5)
                     Picker("Font", selection: $fontName) {
                         Text("\(TerminalFont.displayName) (Default)").tag(TerminalFont.postScriptName)
                         ForEach(fontLibrary.fonts) { font in

@@ -26,11 +26,16 @@ struct PTYHandlerTests {
         let ready = channel.eventLoop.makePromise(of: Void.self)
         let result = ReadyResult()
         ready.futureResult.whenComplete { result.result = $0 }
-        let handler = PTYHandler(term: "xterm-256color", columns: 80, rows: 24, ready: ready)
+        let handler = PTYHandler(term: "xterm-256color", columns: 80, rows: 24, pixelWidth: 800, pixelHeight: 504, ready: ready)
         try channel.pipeline.addHandlers(recorder, handler).wait()
         channel.pipeline.fireChannelActive()
         #expect(recorder.requests.count == 1)
-        #expect(recorder.requests.first is SSHChannelRequestEvent.PseudoTerminalRequest)
+        // Image tools read the pixel size from the remote tty; zero makes them refuse to draw.
+        let request = try #require(recorder.requests.first as? SSHChannelRequestEvent.PseudoTerminalRequest)
+        #expect(request.terminalCharacterWidth == 80)
+        #expect(request.terminalRowHeight == 24)
+        #expect(request.terminalPixelWidth == 800)
+        #expect(request.terminalPixelHeight == 504)
         #expect(result.result == nil)
         channel.pipeline.fireUserInboundEventTriggered(ChannelSuccessEvent())
         #expect(recorder.requests.count == 2)
@@ -48,7 +53,7 @@ struct PTYHandlerTests {
         let result = ReadyResult()
         ready.futureResult.whenComplete { result.result = $0 }
         try channel.pipeline.addHandlers(recorder, PTYHandler(term: "xterm", columns: 80, rows: 24,
-                                                             ready: ready)).wait()
+                                                             pixelWidth: 0, pixelHeight: 0, ready: ready)).wait()
         channel.pipeline.fireChannelActive()
         channel.pipeline.fireUserInboundEventTriggered(ChannelFailureEvent())
         #expect(recorder.requests.count == 1)
@@ -60,7 +65,7 @@ struct PTYHandlerTests {
     @Test @MainActor func byteStreamPreservesBinaryAndStderrOrdering() async throws {
         let channel = EmbeddedChannel()
         let ready = channel.eventLoop.makePromise(of: Void.self)
-        let handler = PTYHandler(term: "xterm", columns: 80, rows: 24, ready: ready)
+        let handler = PTYHandler(term: "xterm", columns: 80, rows: 24, pixelWidth: 0, pixelHeight: 0, ready: ready)
         try channel.pipeline.syncOperations.addHandlers(RequestRecorder(), handler)
         channel.pipeline.fireChannelActive()
         channel.pipeline.fireUserInboundEventTriggered(ChannelSuccessEvent())
@@ -80,7 +85,7 @@ struct PTYHandlerTests {
     @Test @MainActor func outputOutrunningTheReaderKeepsTheShellOpen() async throws {
         let channel = EmbeddedChannel()
         let ready = channel.eventLoop.makePromise(of: Void.self)
-        let handler = PTYHandler(term: "xterm", columns: 80, rows: 24, ready: ready)
+        let handler = PTYHandler(term: "xterm", columns: 80, rows: 24, pixelWidth: 0, pixelHeight: 0, ready: ready)
         try channel.pipeline.syncOperations.addHandlers(RequestRecorder(), handler)
         channel.pipeline.fireChannelActive()
         channel.pipeline.fireUserInboundEventTriggered(ChannelSuccessEvent())

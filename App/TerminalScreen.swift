@@ -6,7 +6,7 @@ import TerminalRender
 
 /// The workspace owns the connection; this view only presents the selected session.
 struct TerminalScreen: View {
-    @AppStorage("terminal.fontSize") private var fontSize = Double(TerminalConfiguration.defaultFontSize)
+    @AppStorage("terminal.fontSize") private var fontSize = Double(TerminalConfiguration.initialFontSize)
     @AppStorage(TerminalFontLibrary.selectionKey) private var selectedFontName = TerminalFont.postScriptName
     @AppStorage("terminal.theme") private var themeName = "dark"
     let model: ConnectionModel
@@ -95,7 +95,7 @@ struct TerminalScreen: View {
                          onKey: { model.sendUserKey($0, attemptID: inputAttempt) },
                          onPaste: { model.pasteUserInput($0, attemptID: inputAttempt) },
                          onScroll: { model.engine.scroll(by: $0) },
-                         onCellSize: { model.engine.setCellSize(width: $0, height: $1) },
+                         onCellSize: { model.setCellSize(width: $0, height: $1) },
                          onCopySelection: { model.engine.text(in: $0) },
                          inputIdentity: TerminalInputIdentity(sessionID: model.id, attemptID: model.connectionAttemptID),
                          focusRequest: allowsAuthentication && activeSheet == nil ? localFocusRequest : nil,
@@ -107,8 +107,12 @@ struct TerminalScreen: View {
                 // Keep the rectangular character grid inside the rounded surface.
                 .padding(6)
                 .background(color(theme.background))
+                // The surface ends level with the sidebar's Settings row, at the bottom of
+                // the safe area, rather than leaving a strip of window background above it
+                // or running under the home indicator.
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .padding(6)
+                .padding(.horizontal, 6)
+                .padding(.top, 6)
         } else {
             terminal.overlay(alignment: .top) {
                 VStack(spacing: 8) {

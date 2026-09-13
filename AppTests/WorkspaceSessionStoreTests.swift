@@ -15,13 +15,14 @@ private final class WorkspaceTransport: ConnectionTransport {
     private(set) var writes: [Data] = []
 
     func connect(host: SSHHost, credential: SSHCredential, columns: Int, rows: Int,
+                 pixelWidth: Int, pixelHeight: Int,
                  confirmHostKey: @escaping @Sendable (HostKeyChallenge) async -> Bool) async throws {
         connectCalls += 1
         isConnected = true
     }
 
     func write(_ data: Data) async throws { writes.append(data) }
-    func resize(columns: Int, rows: Int) async throws {}
+    func resize(columns: Int, rows: Int, pixelWidth: Int, pixelHeight: Int) async throws {}
     func checkConnection() async throws { checkCalls += 1 }
     func disconnect() async {
         disconnectCalls += 1

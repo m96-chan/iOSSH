@@ -32,11 +32,13 @@ public final class SSHSession {
     }
 
     public func connect(host: SSHHost, credential: SSHCredential, columns: Int = 80, rows: Int = 24,
+                        pixelWidth: Int = 0, pixelHeight: Int = 0,
                         confirmHostKey: @escaping @Sendable (HostKeyChallenge) async -> Bool) async throws {
         let attempt = UUID()
         let lifetime = SSHConnectionLifetime()
         try await withTaskCancellationHandler {
             try await connect(host: host, credential: credential, columns: columns, rows: rows,
+                              pixelWidth: pixelWidth, pixelHeight: pixelHeight,
                               confirmHostKey: confirmHostKey, attempt: attempt, lifetime: lifetime)
         } onCancel: {
             // Invalidate synchronously so queued banner callbacks cannot outlive cancellation.
@@ -49,12 +51,13 @@ public final class SSHSession {
     }
 
     private func connect(host: SSHHost, credential: SSHCredential, columns: Int, rows: Int,
+                         pixelWidth: Int, pixelHeight: Int,
                          confirmHostKey: @escaping @Sendable (HostKeyChallenge) async -> Bool,
                          attempt: UUID, lifetime: SSHConnectionLifetime) async throws {
         guard !connecting, !isConnected else { throw SSHSessionError.alreadyConnecting }
         try Task.checkCancellation()
         try host.validate()
-        try Self.validateSize(columns: columns, rows: rows)
+        try Self.validateSize(columns: columns, rows: rows, pixelWidth: pixelWidth, pixelHeight: pixelHeight)
         connecting = true
         generation = attempt
         connectionLifetime = lifetime
@@ -115,7 +118,8 @@ public final class SSHSession {
             try ensureCurrent(attempt)
 
             let ready = channel.eventLoop.makePromise(of: Void.self)
-            let handler = PTYHandler(term: host.terminalType, columns: columns, rows: rows, ready: ready)
+            let handler = PTYHandler(term: host.terminalType, columns: columns, rows: rows,
+                                     pixelWidth: pixelWidth, pixelHeight: pixelHeight, ready: ready)
             let output = handler.output
             let child: Channel = try await channel.eventLoop.flatSubmit {
                 let created = channel.eventLoop.makePromise(of: Channel.self)
@@ -181,12 +185,12 @@ public final class SSHSession {
         }
     }
 
-    public func resize(columns: Int, rows: Int) async throws {
-        try Self.validateSize(columns: columns, rows: rows)
+    public func resize(columns: Int, rows: Int, pixelWidth: Int = 0, pixelHeight: Int = 0) async throws {
+        try Self.validateSize(columns: columns, rows: rows, pixelWidth: pixelWidth, pixelHeight: pixelHeight)
         guard isConnected, let shell else { throw SSHSessionError.notConnected }
         try await shell.triggerUserOutboundEvent(SSHChannelRequestEvent.WindowChangeRequest(
             terminalCharacterWidth: columns, terminalRowHeight: rows,
-            terminalPixelWidth: 0, terminalPixelHeight: 0))
+            terminalPixelWidth: pixelWidth, terminalPixelHeight: pixelHeight))
     }
 
     /// Checks the retained SSH transport on foreground return without creating a new shell.
@@ -239,8 +243,11 @@ public final class SSHSession {
         try Task.checkCancellation()
     }
 
-    private static func validateSize(columns: Int, rows: Int) throws {
-        guard (1...65535).contains(columns), (1...65535).contains(rows) else {
+    /// Zero pixels is the protocol's "unknown" value, so a caller that has not measured a cell
+    /// yet stays valid; anything reported must still fit the window-size fields.
+    private static func validateSize(columns: Int, rows: Int, pixelWidth: Int, pixelHeight: Int) throws {
+        guard (1...65535).contains(columns), (1...65535).contains(rows),
+              (0...65535).contains(pixelWidth), (0...65535).contains(pixelHeight) else {
             throw SSHSessionError.invalidConfiguration
         }
     }

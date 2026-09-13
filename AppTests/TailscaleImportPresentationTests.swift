@@ -182,6 +182,7 @@ private final class ImportPresentationTransport: ConnectionTransport {
     }
 
     func connect(host: SSHHost, credential: SSHCredential, columns: Int, rows: Int,
+                 pixelWidth: Int, pixelHeight: Int,
                  confirmHostKey: @escaping @Sendable (HostKeyChallenge) async -> Bool) async throws {
         connectCalls += 1
         if requiresTrust {
@@ -205,7 +206,7 @@ private final class ImportPresentationTransport: ConnectionTransport {
         reply?.resume()
     }
 
-    func resize(columns: Int, rows: Int) async throws {}
+    func resize(columns: Int, rows: Int, pixelWidth: Int, pixelHeight: Int) async throws {}
     func write(_ data: Data) async throws { writes.append(data) }
     func checkConnection() async throws {}
     func disconnect() async { disconnectCalls += 1; isConnected = false }
