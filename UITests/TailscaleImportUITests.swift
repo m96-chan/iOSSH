@@ -95,7 +95,8 @@ final class TailscaleImportUITests: XCTestCase {
         let setup = app.navigationBars["Set Up Shortcut"]
         XCTAssertTrue(setup.waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["shareTailscaleShortcut"].exists)
-        let manual = app.buttons["Create Manually"]
+        let manual = app.descendants(matching: .any)
+            .matching(identifier: "manualTailscaleShortcutSetup").firstMatch
         let readyToExpand = XCTNSPredicateExpectation(predicate: NSPredicate(format: "hittable == true"), object: manual)
         XCTAssertEqual(XCTWaiter.wait(for: [readyToExpand], timeout: 5), .completed)
         manual.tap()

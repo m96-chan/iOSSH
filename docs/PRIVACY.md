@@ -4,7 +4,7 @@
 
 Last updated: September 13, 2026
 
-> Release-review draft. Before publication, the developer must supply their identity, a private privacy-contact address or form, and the public URL for this policy. These details have not yet been provided.
+> Release-review draft. Before publication, the developer must supply a private privacy-contact address or form and the public URL for this policy. These details have not yet been provided.
 
 ## About iOSSH
 
@@ -67,7 +67,9 @@ For App Store apps, Apple may make crash information and usage statistics availa
 
 ## Privacy contact
 
-**Developer identity and private privacy-contact address/form: to be supplied before publication.**
+Developer: **Yusuke Harada**.
+
+**Private privacy-contact address/form: to be supplied before publication.**
 
 Use that contact for questions or requests about this policy. Information stored only on your device or your chosen server is not available to the developer through iOSSH; the controls above and the relevant service administrator govern that information.
 

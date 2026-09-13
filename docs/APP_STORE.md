@@ -3,11 +3,17 @@
 English | [日本語](APP_STORE.jp.md)
 
 These fields describe the implemented app. They have not been submitted to App
-Store Connect. Keep the current bundle identifier, `moe.technologies.iossh`, while
-its registration under the distribution team is being resolved.
+Store Connect. The release uses the individual Apple Developer membership and
+bundle identifier `io.github.m96-chan.iossh`.
+
+This installs separately from previous `moe.technologies.iossh` development
+builds. Saved hosts, credentials, settings, and imported fonts do not migrate
+automatically. Replace **Import Tailscale Hosts** with the shortcut exported
+from the new app before fetching devices; see the [migration steps](../shortcuts/README.md#updating-from-the-previous-app-identifier).
 
 ## Store listing
 
+- Intended publisher: **Yusuke Harada**, as an individual
 - Name: **iOSSH**
 - Subtitle: **SSH terminal for iPhone & iPad**
 - Suggested category: **Developer Tools**
@@ -54,7 +60,7 @@ before registration.
 
 ## Remaining release inputs
 
-- Register the retained bundle ID with the distribution team, then create the
+- Verify the new bundle ID with the distribution team, then create the
   App Store Connect app record and validate the signed archive.
 - Confirm the store name's availability, primary language, price, and countries.
 - Finalize and publish the [privacy policy draft](PRIVACY.md), including a real

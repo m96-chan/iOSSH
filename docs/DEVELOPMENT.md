@@ -137,6 +137,15 @@ Use a disposable test key and account. The test checks PTY output, remote `stty`
 
 ## App Store preparation
 
+The app uses `io.github.m96-chan.iossh` as its bundle identifier and Shortcuts
+callback URL scheme. The shared project leaves `DEVELOPMENT_TEAM` empty; pass
+your team at build time. Builds with this ID install alongside the previous
+`moe.technologies.iossh` app with separate hosts, Keychain credentials, settings,
+known-host records, and imported fonts. These do not migrate automatically.
+Replace the old **Import Tailscale Hosts** shortcut with the file exported from
+the new app, keeping its name, then fetch devices from the new app. See the
+[shortcut migration steps](../shortcuts/README.md#updating-from-the-previous-app-identifier).
+
 [Store listing and review notes](APP_STORE.md), [support](SUPPORT.md), and
 [privacy policy](PRIVACY.md) are drafts until their remaining release inputs are
 filled. The app's privacy manifest declares its app-local UserDefaults access

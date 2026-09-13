@@ -18,7 +18,7 @@ import uuid
 
 NAME = "Import Tailscale Hosts"
 TAILSCALE_BUNDLE = "io.tailscale.ipn.ios"
-APP_BUNDLE = "moe.technologies.iossh"
+APP_BUNDLE = "io.github.m96-chan.iossh"
 NAMESPACE = uuid.UUID("4de1b0ad-e411-4b91-91e3-0b9a94e0489f")
 
 

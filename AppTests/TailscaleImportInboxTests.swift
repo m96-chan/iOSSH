@@ -5,6 +5,27 @@ import Testing
 
 @MainActor
 struct TailscaleImportInboxTests {
+    @Test func callbacksUseTheInstalledAppsSchemeAndIgnoreThePreviousApp() throws {
+        let urlTypes = try #require(Bundle.main.object(forInfoDictionaryKey: "CFBundleURLTypes") as? [[String: Any]])
+        let registeredSchemes = urlTypes.flatMap { $0["CFBundleURLSchemes"] as? [String] ?? [] }
+        #expect(!registeredSchemes.contains("iossh"), "The previous app must keep its own callback route")
+
+        let inbox = TailscaleImportInbox()
+        let shortcut = inbox.shortcutURL()
+        for name in ["x-success", "x-error", "x-cancel"] {
+            let scheme = try #require(callback(name, in: shortcut).scheme)
+            #expect(registeredSchemes.contains(scheme), "Callbacks must be routed to this installed app")
+        }
+
+        let current = try callback("x-cancel", in: shortcut)
+        var previous = try #require(URLComponents(url: current, resolvingAgainstBaseURL: false))
+        previous.scheme = "iossh"
+        inbox.handleCallback(try #require(previous.url))
+        #expect(inbox.message == nil)
+        inbox.handleCallback(current)
+        #expect(inbox.message?.contains("canceled") == true, "Ignoring a previous-app callback must not consume the request")
+    }
+
     @Test func receivedListsArePresentedOnceAndInvalidInputPreservesTheCurrentList() throws {
         let inbox = TailscaleImportInbox()
         #expect(!inbox.needsPresentation)
