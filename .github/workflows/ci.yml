@@ -31,7 +31,7 @@ jobs:
           xcodebuild -project iOSSH.xcodeproj -scheme iOSSH -destination "platform=iOS Simulator,id=$IOSSH_SIMULATOR_ID" -derivedDataPath build/DerivedData -resultBundlePath build/CI.xcresult -skipPackagePluginValidation -parallel-testing-enabled NO test
       - name: Upload test results and screenshots
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ios-test-results
           path: build/CI.xcresult
