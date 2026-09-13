@@ -162,6 +162,7 @@ private struct TailscaleShortcutSetupView: View {
                         Text("For Hostnames, choose the MagicDNS Address property of the Devices result. You can use IPv4 Address or IPv6 Address instead.")
                         Text("Leave Find Devices unfiltered to list all devices. iOSSH lets you choose which ones to save.")
                     }
+                    .accessibilityIdentifier("manualTailscaleShortcutSetup")
                 }
                 Section {
                     Button("Open Shortcuts", systemImage: "arrow.up.forward.app") { openURL(URL(string: "shortcuts://")!) }

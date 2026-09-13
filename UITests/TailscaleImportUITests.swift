@@ -95,9 +95,15 @@ final class TailscaleImportUITests: XCTestCase {
         let setup = app.navigationBars["Set Up Shortcut"]
         XCTAssertTrue(setup.waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["shareTailscaleShortcut"].exists)
-        app.buttons["Create Manually"].tap()
-        XCTAssertTrue(app.staticTexts["Tailscale → Find Devices"].exists)
-        XCTAssertTrue(app.staticTexts["iOSSH → Review Tailscale Hosts"].exists)
+        let manual = app.descendants(matching: .any)
+            .matching(identifier: "manualTailscaleShortcutSetup").firstMatch
+        let readyToExpand = XCTNSPredicateExpectation(predicate: NSPredicate(format: "hittable == true"), object: manual)
+        XCTAssertEqual(XCTWaiter.wait(for: [readyToExpand], timeout: 5), .completed)
+        manual.tap()
+        // DisclosureGroup expands asynchronously; CI can snapshot its previous
+        // collapsed accessibility tree immediately after synthesizing the tap.
+        XCTAssertTrue(app.staticTexts["Tailscale → Find Devices"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["iOSSH → Review Tailscale Hosts"].waitForExistence(timeout: 5))
         setup.buttons["Done"].tap()
         XCTAssertTrue(setup.waitForNonExistence(timeout: 5))
         app.navigationBars["Import from Tailscale"].buttons["Cancel"].tap()
