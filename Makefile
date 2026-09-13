@@ -31,4 +31,4 @@ device-install:
 	xcrun devicectl device install app --device '$(DEVICE_ID)' --timeout 60 '$(DEVICE_DERIVED_DATA)/Build/Products/Debug-iphoneos/iOSSH.app'
 
 device-run: device-install
-	xcrun devicectl device process launch --device '$(DEVICE_ID)' --timeout 30 moe.technologies.iossh
+	xcrun devicectl device process launch --device '$(DEVICE_ID)' --timeout 30 io.github.m96-chan.iossh

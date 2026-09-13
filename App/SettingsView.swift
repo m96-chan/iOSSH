@@ -79,6 +79,19 @@ struct SettingsView: View {
                     Label("Use the extra key row for Ctrl, Esc, Tab and arrows.", systemImage: "keyboard")
                 }
                 .font(.subheadline)
+                Section("About") {
+                    NavigationLink("Open source licenses") {
+                        ScrollView {
+                            Text(Self.thirdPartyNotices)
+                                .font(.caption)
+                                .textSelection(.enabled)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding()
+                        }
+                        .navigationTitle("Open source licenses")
+                    }
+                    .accessibilityIdentifier("openSourceLicenses")
+                }
             }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
@@ -106,4 +119,12 @@ struct SettingsView: View {
             }
         }
     }
+
+    private static let thirdPartyNotices: String = {
+        guard let url = Bundle.main.url(forResource: "ThirdPartyNotices", withExtension: "txt"),
+              let text = try? String(contentsOf: url, encoding: .utf8) else {
+            return "Open source license text is unavailable."
+        }
+        return text
+    }()
 }

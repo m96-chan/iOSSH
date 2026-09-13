@@ -228,7 +228,7 @@
 		</dict>
 		<dict>
 			<key>WFWorkflowActionIdentifier</key>
-			<string>moe.technologies.iossh.ReviewTailscaleHostsIntent</string>
+			<string>io.github.m96-chan.iossh.ReviewTailscaleHostsIntent</string>
 			<key>WFWorkflowActionParameters</key>
 			<dict>
 				<key>UUID</key>
@@ -240,7 +240,7 @@
 					<key>AppIntentIdentifier</key>
 					<string>ReviewTailscaleHostsIntent</string>
 					<key>BundleIdentifier</key>
-					<string>moe.technologies.iossh</string>
+					<string>io.github.m96-chan.iossh</string>
 					<key>Name</key>
 					<string>iOSSH</string>
 				</dict>
