@@ -95,7 +95,7 @@ struct TerminalScreen: View {
                          onKey: { model.sendUserKey($0, attemptID: inputAttempt) },
                          onPaste: { model.pasteUserInput($0, attemptID: inputAttempt) },
                          onScroll: { model.engine.scroll(by: $0) },
-                         onCellSize: { model.engine.setCellSize(width: $0, height: $1) },
+                         onCellSize: { model.setCellSize(width: $0, height: $1) },
                          onCopySelection: { model.engine.text(in: $0) },
                          inputIdentity: TerminalInputIdentity(sessionID: model.id, attemptID: model.connectionAttemptID),
                          focusRequest: allowsAuthentication && activeSheet == nil ? localFocusRequest : nil,

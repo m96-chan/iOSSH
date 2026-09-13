@@ -115,6 +115,8 @@ Japanese composition is handled by a native UIKit text input at the terminal cur
 
 The last terminal row stays above the opaque accessory row. Layout is recalculated from current keyboard/accessory geometry after keyboard changes, foregrounding, and reconnection, and the resulting rows/columns are sent to the PTY.
 
+Every window size sent to the PTY also carries the terminal's size in pixels, taken from the measured cell size. Image tools read that from the remote tty's window size rather than from an escape sequence, and refuse to draw when it is zero. A font change keeps the same rows and columns but changes the pixel size, so it sends a window change of its own. `CSI 14 t` and `CSI 16 t` answer with the same measured cell size.
+
 Keyboard height changes preserve the pixel size of text and images and change the available row count. The paused Metal view synchronizes its drawable with its bounds and requests a fresh frame even when the shell is idle. On iPad, an offscreen keyboard notification invalidates a stale keyboard guide, restoring the terminal to the bottom inset after dismissal. A still-visible accessory row continues to reserve its actual height.
 
 The terminal protocol keeps the view independent of SwiftTerm. Parser state is isolated to `MainActor`, while immutable snapshots carry grid cells, damage, cursor state, and images into the renderer. Snapshot publication is coalesced. Metal uses a bounded glyph atlas and triple instance buffers, rebuilding changed rows in each buffer slot. Rendering pauses when inactive.

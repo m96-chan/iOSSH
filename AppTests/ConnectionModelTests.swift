@@ -39,7 +39,9 @@ private final class TestTransport: ConnectionTransport {
     var authenticationBannerOnConnect: String?
     private(set) var receivedCredential: SSHCredential?
     private(set) var initialSize: [Int]?
+    private(set) var initialPixelSize: [Int]?
     private(set) var sizes: [[Int]] = []
+    private(set) var pixelSizes: [[Int]] = []
     private(set) var writes: [Data] = []
     private(set) var writeReturned = false
     private(set) var disconnectCalls = 0
@@ -48,9 +50,11 @@ private final class TestTransport: ConnectionTransport {
     private(set) var trustDecisions: [Bool] = []
 
     func connect(host: SSHHost, credential: SSHCredential, columns: Int, rows: Int,
+                 pixelWidth: Int, pixelHeight: Int,
                  confirmHostKey: @escaping @Sendable (HostKeyChallenge) async -> Bool) async throws {
         connectCalls += 1
         initialSize = [columns, rows]
+        initialPixelSize = [pixelWidth, pixelHeight]
         receivedCredential = credential
         if let banner = authenticationBannerOnConnect { onAuthenticationBanner?(banner) }
         await connectionSuspension?.wait()
@@ -72,9 +76,10 @@ private final class TestTransport: ConnectionTransport {
         guard isConnected else { throw SSHSessionError.notConnected }
     }
 
-    func resize(columns: Int, rows: Int) async throws {
+    func resize(columns: Int, rows: Int, pixelWidth: Int, pixelHeight: Int) async throws {
         guard isConnected else { throw SSHSessionError.notConnected }
         sizes.append([columns, rows])
+        pixelSizes.append([pixelWidth, pixelHeight])
         let pause = resizeSuspension
         resizeSuspension = nil
         await pause?.wait()
@@ -430,6 +435,23 @@ struct ConnectionModelTests {
         await model.connect()
         try await inspect.value
         #expect(model.phase == .connected)
+        await model.close()
+    }
+
+    /// Programs that draw images read the terminal's pixel size from the remote tty. The shell
+    /// learns the measured cell size when it starts, and again when a font change alters the
+    /// pixel size without changing the number of columns or rows.
+    @Test(.timeLimit(.minutes(1)))
+    func theShellLearnsThePixelSizeOfTheGridAndOfALaterFontChange() async throws {
+        let transport = TestTransport()
+        let model = ConnectionModel(host: host, dependencies: dependencies(transport))
+        model.setCellSize(width: 10, height: 21)
+        await model.connect()
+        #expect(transport.initialSize == [80, 24])
+        #expect(transport.initialPixelSize == [800, 504])
+        model.setCellSize(width: 14, height: 30)
+        try await waitUntil { transport.pixelSizes.last == [1120, 720] }
+        #expect(transport.sizes.last == [80, 24])
         await model.close()
     }
 

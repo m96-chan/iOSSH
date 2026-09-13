@@ -193,13 +193,14 @@ private final class LayoutTransport: ConnectionTransport {
     init(marker: String) { self.marker = marker }
 
     func connect(host: SSHHost, credential: SSHCredential, columns: Int, rows: Int,
+                 pixelWidth: Int, pixelHeight: Int,
                  confirmHostKey: @escaping @Sendable (HostKeyChallenge) async -> Bool) async throws {
         connectCalls += 1
         isConnected = true
         onData?(Data("\(marker) ready\r\n".utf8))
     }
 
-    func resize(columns: Int, rows: Int) async throws { lastSize = CGSize(width: columns, height: rows) }
+    func resize(columns: Int, rows: Int, pixelWidth: Int, pixelHeight: Int) async throws { lastSize = CGSize(width: columns, height: rows) }
     func write(_ data: Data) async throws { writes.append(data) }
     func checkConnection() async throws {}
     func disconnect() async { disconnectCalls += 1; isConnected = false }
