@@ -114,15 +114,20 @@ public final class SSHSession {
             authenticationTimeout.cancel()
             try ensureCurrent(attempt)
 
-            let (output, continuation) = AsyncThrowingStream<Data, Error>.makeStream(bufferingPolicy: .bufferingOldest(128))
             let ready = channel.eventLoop.makePromise(of: Void.self)
-            let handler = PTYHandler(term: host.terminalType, columns: columns, rows: rows,
-                                     ready: ready, output: continuation)
+            let handler = PTYHandler(term: host.terminalType, columns: columns, rows: rows, ready: ready)
+            let output = handler.output
             let child: Channel = try await channel.eventLoop.flatSubmit {
                 let created = channel.eventLoop.makePromise(of: Channel.self)
                 do {
                     let ssh = try channel.pipeline.syncOperations.handler(type: NIOSSHHandler.self)
-                    ssh.createChannel(created) { child, _ in child.pipeline.addHandler(handler) }
+                    // Disabling autoRead makes the shell deliver output only when asked. While the
+                    // terminal is behind, the SSH window closes and the server waits instead of
+                    // queueing unbounded output on this device.
+                    ssh.createChannel(created) { child, _ in
+                        child.setOption(ChannelOptions.autoRead, value: false)
+                            .flatMap { child.pipeline.addHandler(handler) }
+                    }
                 } catch { created.fail(error) }
                 let timeout = channel.eventLoop.scheduleTask(in: .seconds(15)) {
                     created.fail(SSHSessionError.connectionTimedOut)
@@ -144,9 +149,13 @@ public final class SSHSession {
             isConnected = true
             readTask = Task { [weak self] in
                 do {
+                    // Request the first batch, then one more each time output reaches the terminal.
+                    // `read` is safe from this actor; it hops to the channel's event loop.
+                    child.read()
                     for try await data in output {
                         guard !Task.isCancelled, let self, self.generation == attempt else { return }
                         self.onData?(data)
+                        child.read()
                     }
                     await self?.ended(attempt: attempt, error: nil)
                 } catch {

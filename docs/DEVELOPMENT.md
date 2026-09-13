@@ -62,6 +62,8 @@ First use shows the server's SHA-256 host-key fingerprint. Compare it through a 
 
 Screen lock and backgrounding retain the SSH session, terminal buffer, and cursor. Returning checks the existing connection and reapplies its current terminal size without authenticating again or opening another shell. Explicit Close/Disconnect still closes the connection. If the peer has closed or no longer responds, the app offers Reconnect; that opens a fresh authenticated shell with host-key verification and cannot recover a shell the server ended. iOS can suspend the app, so retaining a session does not guarantee indefinite background networking. See [Apple's background execution guidance](https://developer.apple.com/documentation/uikit/extending-your-app-s-background-execution-time).
 
+Shell output is read on demand: the app asks the SSH channel for the next batch only after the terminal has consumed the previous one. A burst such as a large directory listing therefore closes the SSH receive window and makes the server wait, instead of queueing unbounded output on the device or dropping bytes and ending the session.
+
 ## Import Tailscale devices
 
 1. Install Tailscale and Shortcuts on the iPhone or iPad, sign in to Tailscale, and keep it connected.
