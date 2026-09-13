@@ -4,7 +4,8 @@ import CoreGraphics
 import ImageIO
 @testable import TerminalCore
 
-@Suite @MainActor struct TerminalCoreTests {
+/// The parser owns its own isolation, so these drive it from there rather than the main actor.
+@Suite @TerminalParserActor struct TerminalCoreTests {
     @Test func splitUTF8AndWideCombiningCharacters() {
         let engine = SwiftTermEngine(columns: 12, rows: 3)
         for byte in "A日e\u{301}🙂Z".utf8 { engine.feed(Data([byte])) }

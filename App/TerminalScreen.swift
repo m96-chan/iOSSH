@@ -158,6 +158,7 @@ struct TerminalScreen: View {
                 Button("Appearance", systemImage: "textformat.size") { present(.settings) }
                 Button("Import from Tailscale", systemImage: "arrow.down.circle") { present(.tailscaleImport) }
                 Button("Scroll to Bottom", systemImage: "arrow.down.to.line") { model.terminal.scrollToBottom() }
+                Button("Show Terminal Size", systemImage: "ruler") { model.reportSizeIntoTerminal() }
                 if model.phase == .connected || model.phase == .checking {
                     Button("Disconnect", systemImage: "network.slash") { Task { await model.close() } }
                 } else if model.phase != .connecting, model.host.authentication != .tailscale {

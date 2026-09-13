@@ -19,11 +19,15 @@ public final class TerminalPipeline: Sendable {
         case colors(foreground: TerminalColor, background: TerminalColor, palette: [TerminalColor])
         case reset
         case snapshot(@Sendable (TerminalSnapshot) -> Void)
+        case snapshotIfDrained(@Sendable (TerminalSnapshot?) -> Void)
         case text(TerminalSelection, @Sendable (String) -> Void)
     }
 
     private let commands: AsyncStream<Command>.Continuation
     private let task: Task<Void, Never>
+    /// Output submitted but not parsed yet. A program repainting the screen sends one frame as
+    /// several batches, so drawing while this is above zero shows a repaint in progress.
+    private let unparsed: Counter
 
     public init(columns: Int = 80, rows: Int = 24, imageBudget: TerminalImageBudget? = nil,
                 onOutput: @escaping @Sendable (Data, UUID?) -> Void,
@@ -34,6 +38,8 @@ public final class TerminalPipeline: Sendable {
         // Dropping any of them would lose typed bytes or leave the grid at a stale size.
         let (stream, continuation) = AsyncStream<Command>.makeStream(bufferingPolicy: .unbounded)
         commands = continuation
+        let unparsed = Counter()
+        self.unparsed = unparsed
         task = Task { @TerminalParserActor in
             let engine = SwiftTermEngine(columns: columns, rows: rows, imageBudget: imageBudget)
             // A key or a paste produces its bytes synchronously inside the command that asked
@@ -47,7 +53,9 @@ public final class TerminalPipeline: Sendable {
             onNeedsDisplay()
             for await command in stream {
                 switch command {
-                case .data(let data): engine.feed(data)
+                case .data(let data):
+                    engine.feed(data)
+                    unparsed.decrement()
                 case .key(let key, let token):
                     origin.value = token
                     engine.sendKey(key)
@@ -64,6 +72,8 @@ public final class TerminalPipeline: Sendable {
                     engine.setColors(foreground: foreground, background: background, palette: palette)
                 case .reset: engine.reset()
                 case .snapshot(let answer): answer(engine.snapshot())
+                case .snapshotIfDrained(let answer):
+                    answer(unparsed.isZero ? engine.snapshot() : nil)
                 case .text(let selection, let answer): answer(engine.text(in: selection))
                 }
             }
@@ -75,7 +85,10 @@ public final class TerminalPipeline: Sendable {
         task.cancel()
     }
 
-    public func feed(_ data: Data) { commands.yield(.data(data)) }
+    public func feed(_ data: Data) {
+        unparsed.increment()
+        commands.yield(.data(data))
+    }
     /// `origin` marks bytes the person typed, so a caller can drop them if the shell they were
     /// meant for has gone away. Parser replies arrive without one.
     public func sendKey(_ key: TerminalKey, origin: UUID? = nil) { commands.yield(.key(key, origin: origin)) }
@@ -97,6 +110,14 @@ public final class TerminalPipeline: Sendable {
         }
     }
 
+    /// The grid once nothing else is waiting to be parsed, or `nil` while output is still
+    /// arriving. Drawing only complete work keeps a repaint from appearing half-finished.
+    public func snapshotIfDrained() async -> TerminalSnapshot? {
+        await withCheckedContinuation { continuation in
+            commands.yield(.snapshotIfDrained { continuation.resume(returning: $0) })
+        }
+    }
+
     public func text(in selection: TerminalSelection) async -> String {
         await withCheckedContinuation { continuation in
             commands.yield(.text(selection) { continuation.resume(returning: $0) })
@@ -109,4 +130,29 @@ public final class TerminalPipeline: Sendable {
 /// call that can produce typed bytes.
 @TerminalParserActor private final class OriginBox {
     var value: UUID?
+}
+
+
+/// Counts work submitted from any isolation against work finished inside the parser.
+private final class Counter: Sendable {
+    private let lock = NSLock()
+    nonisolated(unsafe) private var value = 0
+
+    func increment() {
+        lock.lock()
+        value += 1
+        lock.unlock()
+    }
+
+    func decrement() {
+        lock.lock()
+        value -= 1
+        lock.unlock()
+    }
+
+    var isZero: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return value == 0
+    }
 }

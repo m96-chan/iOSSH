@@ -443,6 +443,23 @@ struct ConnectionModelTests {
         await model.close()
     }
 
+    /// On a device the view measures a cell while the connection is still authenticating, so
+    /// the size the shell starts with is zero and the measurement has to reach it afterwards.
+    @Test(.timeLimit(.minutes(1)))
+    func theShellLearnsAPixelSizeMeasuredWhileItWasStillConnecting() async throws {
+        let transport = TestTransport()
+        let authenticating = Suspension()
+        transport.connectionSuspension = authenticating
+        let model = ConnectionModel(host: host, dependencies: dependencies(transport))
+        let connecting = Task { await model.connect() }
+        try await waitUntil { authenticating.arrived }
+        model.setCellSize(width: 10, height: 21)
+        authenticating.release()
+        await connecting.value
+        try await waitUntil { transport.pixelSizes.last == [800, 504] }
+        await model.close()
+    }
+
     /// Programs that draw images read the terminal's pixel size from the remote tty. The shell
     /// learns the measured cell size when it starts, and again when a font change alters the
     /// pixel size without changing the number of columns or rows.

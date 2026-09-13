@@ -93,8 +93,6 @@ final class ConnectionModel: Identifiable {
     @ObservationIgnored private var hasPendingCredentialSubmission = false
     @ObservationIgnored private var trustReply: CheckedContinuation<Bool, Never>?
     @ObservationIgnored private var snapshotTask: Task<Void, Never>?
-    /// When the shell last handed over output, used to draw between batches of a repaint.
-    @ObservationIgnored private var lastOutputArrival: ContinuousClock.Instant?
     @ObservationIgnored private var writerTask: Task<Void, Never>?
     @ObservationIgnored private var input: AsyncStream<WriteOperation>.Continuation?
     @ObservationIgnored private var inputGeneration = UUID()
@@ -180,7 +178,6 @@ final class ConnectionModel: Identifiable {
             }
             transport.onData = { [weak self] data in
                 guard let self, self.attempt == token else { return }
-                self.lastOutputArrival = .now
                 self.terminal.feed(data)
             }
             transport.onDisconnect = { [weak self] reason in
@@ -199,6 +196,7 @@ final class ConnectionModel: Identifiable {
             }
             terminal.reset()
             startWriter(transport: transport, token: token)
+            lastSentSize = (columns, rows, pixelSize.width, pixelSize.height)
             try await transport.connect(host: host, credential: credential,
                                         columns: columns, rows: rows,
                                         pixelWidth: pixelSize.width,
@@ -215,6 +213,7 @@ final class ConnectionModel: Identifiable {
             while true {
                 let sent = [columns, rows]
                 let pixels = pixelSize
+                lastSentSize = (columns, rows, pixels.width, pixels.height)
                 try await transport.resize(columns: columns, rows: rows,
                                            pixelWidth: pixels.width, pixelHeight: pixels.height)
                 guard attempt == token, transport.isConnected, !Task.isCancelled else { return }
@@ -326,6 +325,7 @@ final class ConnectionModel: Identifiable {
                 guard transport.isConnected else { throw SSHSessionError.disconnected }
                 let sent = [columns, rows]
                 let pixels = pixelSize
+                lastSentSize = (columns, rows, pixels.width, pixels.height)
                 try await transport.resize(columns: columns, rows: rows,
                                            pixelWidth: pixels.width, pixelHeight: pixels.height)
                 guard isCurrentForegroundCheck(token: token, checkID: checkID) else { return }
@@ -428,6 +428,26 @@ final class ConnectionModel: Identifiable {
 
     private var pixelSize: (width: Int, height: Int) {
         (min(65535, columns * cellPixelWidth), min(65535, rows * cellPixelHeight))
+    }
+
+    /// What the PTY was last told, for the size report in the session menu.
+    private(set) var lastSentSize: (columns: Int, rows: Int, pixelWidth: Int, pixelHeight: Int)?
+
+    /// Writes the sizes this session is working with into the terminal itself. Nothing is sent
+    /// to the shell: the line is fed to the local parser, so it reads like output that arrived.
+    func reportSizeIntoTerminal() {
+        let pixels = pixelSize
+        let sent = lastSentSize.map { "\($0.columns)x\($0.rows) cells, \($0.pixelWidth)x\($0.pixelHeight) px" } ?? "nothing yet"
+        let lines = [
+            "iOSSH size report",
+            "  grid        \(columns)x\(rows)",
+            "  cell        \(cellPixelWidth)x\(cellPixelHeight) px",
+            "  would send  \(pixels.width)x\(pixels.height) px",
+            "  last sent   \(sent)",
+            "  TERM        \(host.terminalType)",
+            "  state       \(phase)"
+        ]
+        terminal.feed(Data((lines.joined(separator: "\r\n") + "\r\n").utf8))
     }
 
     private func sendSizeToShell() {
@@ -559,9 +579,10 @@ final class ConnectionModel: Identifiable {
                     case .resize:
                         // A lock/check may have superseded a queued layout event.
                         guard !self.isInBackground, self.phase == .connected else { continue }
+                        let pixels = self.pixelSize
+                        self.lastSentSize = (self.columns, self.rows, pixels.width, pixels.height)
                         try await transport.resize(columns: self.columns, rows: self.rows,
-                                                   pixelWidth: self.pixelSize.width,
-                                                   pixelHeight: self.pixelSize.height)
+                                                   pixelWidth: pixels.width, pixelHeight: pixels.height)
                     case .data(let data, let generation):
                         if let generation {
                             // Foreground validation sends the latest size itself.
@@ -582,11 +603,13 @@ final class ConnectionModel: Identifiable {
         }
     }
 
-    /// Output arrives in network-sized batches, so a program repainting the whole screen
-    /// lands over several of them. Drawing between batches shows that repaint in progress,
-    /// which reads as the picture being wiped from the top down. Wait for a gap in the
-    /// output before drawing, and draw anyway once the deadline passes so a continuous
-    /// stream still updates.
+    /// A program repainting the whole screen sends one frame as a dozen network batches, and
+    /// erases each line before painting it. Drawing between those batches shows the erase
+    /// without the paint, which reads as the picture being wiped downward from the top.
+    ///
+    /// Draw only what the parser has finished, which for a program that pauses between frames
+    /// means whole frames. A stream that never pauses would otherwise never draw, so the
+    /// deadline gives up waiting and draws whatever is there.
     private func scheduleSnapshot() {
         guard isVisible, !isInBackground, snapshotTask == nil else { return }
         snapshotTask = Task { [weak self] in
@@ -594,17 +617,22 @@ final class ConnectionModel: Identifiable {
             while true {
                 try? await Task.sleep(for: Self.snapshotInterval)
                 guard !Task.isCancelled, let self, self.isVisible, !self.isInBackground else { return }
-                guard ContinuousClock.now < deadline, let arrival = self.lastOutputArrival,
-                      arrival.duration(to: .now) < Self.snapshotInterval else { break }
+                if let value = await self.terminal.snapshotIfDrained() {
+                    guard !Task.isCancelled, self.isVisible, !self.isInBackground else { return }
+                    self.snapshot = value
+                    break
+                }
+                guard ContinuousClock.now < deadline else {
+                    let value = await self.terminal.snapshot()
+                    guard !Task.isCancelled, self.isVisible, !self.isInBackground else { return }
+                    self.snapshot = value
+                    break
+                }
             }
-            guard !Task.isCancelled, let self, self.isVisible, !self.isInBackground else { return }
-            let value = await self.terminal.snapshot()
-            guard !Task.isCancelled, self.isVisible, !self.isInBackground else { return }
-            self.snapshot = value
-            self.snapshotTask = nil
+            self?.snapshotTask = nil
         }
     }
 
     private static let snapshotInterval = Duration.milliseconds(8)
-    private static let maximumSnapshotDelay = Duration.milliseconds(48)
+    private static let maximumSnapshotDelay = Duration.milliseconds(120)
 }
