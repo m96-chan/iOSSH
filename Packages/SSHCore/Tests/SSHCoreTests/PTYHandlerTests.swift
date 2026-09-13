@@ -26,8 +26,7 @@ struct PTYHandlerTests {
         let ready = channel.eventLoop.makePromise(of: Void.self)
         let result = ReadyResult()
         ready.futureResult.whenComplete { result.result = $0 }
-        let (_, output) = AsyncThrowingStream<Data, Error>.makeStream()
-        let handler = PTYHandler(term: "xterm-256color", columns: 80, rows: 24, ready: ready, output: output)
+        let handler = PTYHandler(term: "xterm-256color", columns: 80, rows: 24, ready: ready)
         try channel.pipeline.addHandlers(recorder, handler).wait()
         channel.pipeline.fireChannelActive()
         #expect(recorder.requests.count == 1)
@@ -48,9 +47,8 @@ struct PTYHandlerTests {
         let ready = channel.eventLoop.makePromise(of: Void.self)
         let result = ReadyResult()
         ready.futureResult.whenComplete { result.result = $0 }
-        let (_, output) = AsyncThrowingStream<Data, Error>.makeStream()
         try channel.pipeline.addHandlers(recorder, PTYHandler(term: "xterm", columns: 80, rows: 24,
-                                                             ready: ready, output: output)).wait()
+                                                             ready: ready)).wait()
         channel.pipeline.fireChannelActive()
         channel.pipeline.fireUserInboundEventTriggered(ChannelFailureEvent())
         #expect(recorder.requests.count == 1)
@@ -62,9 +60,8 @@ struct PTYHandlerTests {
     @Test @MainActor func byteStreamPreservesBinaryAndStderrOrdering() async throws {
         let channel = EmbeddedChannel()
         let ready = channel.eventLoop.makePromise(of: Void.self)
-        let (stream, output) = AsyncThrowingStream<Data, Error>.makeStream()
-        try channel.pipeline.syncOperations.addHandlers(RequestRecorder(), PTYHandler(term: "xterm", columns: 80, rows: 24,
-                                                                                     ready: ready, output: output))
+        let handler = PTYHandler(term: "xterm", columns: 80, rows: 24, ready: ready)
+        try channel.pipeline.syncOperations.addHandlers(RequestRecorder(), handler)
         channel.pipeline.fireChannelActive()
         channel.pipeline.fireUserInboundEventTriggered(ChannelSuccessEvent())
         channel.pipeline.fireUserInboundEventTriggered(ChannelSuccessEvent())
@@ -74,7 +71,28 @@ struct PTYHandlerTests {
         _ = try channel.writeInbound(SSHChannelData(type: .stdErr, data: .byteBuffer(ByteBuffer(bytes: second))))
         _ = try channel.finish()
         var received = Data()
-        for try await chunk in stream { received.append(chunk) }
+        for try await chunk in handler.output { received.append(chunk) }
         #expect(received == Data(first + second))
+    }
+
+    /// A burst such as a large directory listing outruns terminal parsing on the main actor. The
+    /// unconsumed output must wait for the reader instead of being dropped and closing the shell.
+    @Test @MainActor func outputOutrunningTheReaderKeepsTheShellOpen() async throws {
+        let channel = EmbeddedChannel()
+        let ready = channel.eventLoop.makePromise(of: Void.self)
+        let handler = PTYHandler(term: "xterm", columns: 80, rows: 24, ready: ready)
+        try channel.pipeline.syncOperations.addHandlers(RequestRecorder(), handler)
+        channel.pipeline.fireChannelActive()
+        channel.pipeline.fireUserInboundEventTriggered(ChannelSuccessEvent())
+        channel.pipeline.fireUserInboundEventTriggered(ChannelSuccessEvent())
+        let chunk = [UInt8](repeating: 0x61, count: 1024)
+        for _ in 0..<1024 {
+            _ = try channel.writeInbound(SSHChannelData(type: .channel, data: .byteBuffer(ByteBuffer(bytes: chunk))))
+        }
+        // `finish` rejects an already closed channel, so it fails here if the burst closed the shell.
+        _ = try channel.finish()
+        var received = 0
+        for try await data in handler.output { received += data.count }
+        #expect(received == chunk.count * 1024)
     }
 }
