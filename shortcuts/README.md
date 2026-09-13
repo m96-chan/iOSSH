@@ -12,6 +12,17 @@ your tailnet, then add the shortcut once:
 Allow access when Shortcuts asks to pass Tailscale results to iOSSH. You can also
 open the linked `.shortcut` file above and add it directly.
 
+## Updating from the previous app identifier
+
+If you installed the shortcut for the earlier app (`moe.technologies.iossh`),
+export the shortcut from the new app (`io.github.m96-chan.iossh`) using the steps
+above and replace the existing **Import Tailscale Hosts** shortcut with it. Keep
+the exact same name; do not retain a duplicate with a numbered name. After
+replacement, use **Fetch Devices** in the new app. Running the shared shortcut
+from the old app also sends its results to the new app.
+
+## Manual setup
+
 For manual setup, expand **Create Manually** in **Set Up Shortcut**. Create a
 shortcut named **Import Tailscale Hosts** with **Tailscale → Find Devices** and
 **iOSSH → Review Tailscale Hosts**. Bind **Hostnames** to the **MagicDNS Address**
@@ -41,10 +52,12 @@ The script never runs the workflow or requests devices.
 copy under `App/Resources` is unnecessary.
 
 Serialization was checked against macOS 26.5 and Tailscale 1.102.3 action
-metadata; the workflow targets the iOS bundle `io.tailscale.ipn.ios`. The final
-action's bundle, intent identifier, `hostnames` string-array parameter, and
-`openAppWhenRun` behavior match the built iOSSH App Intents metadata. The signing,
-XML structure, and address fallback were checked locally. End-to-end discovery
+metadata; Find Devices targets the iOS bundle `io.tailscale.ipn.ios`. The final
+action targets `io.github.m96-chan.iossh.ReviewTailscaleHostsIntent`, passing the
+`hostnames` string-array parameter to the receiving app. Verify the receiver
+against the built app's App Intents metadata after a bundle-identifier change,
+then regenerate and sign the workflow before distributing it. The workflow's
+XML structure and address fallback were checked locally. End-to-end discovery
 and import, including an empty device result, must also be checked on an iPhone
 or iPad with both apps installed.
 
