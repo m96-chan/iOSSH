@@ -113,7 +113,13 @@ final class ConnectionModel: Identifiable {
     private var cellPixelWidth = 0
     private var cellPixelHeight = 0
     private(set) var phase: Phase = .idle
-    private(set) var snapshot: TerminalSnapshot?
+    /// Deliberately not observable: it reaches the view through `surface`, so publishing a
+    /// frame does not re-evaluate the screen's body. Kept for the code here that reads it.
+    @ObservationIgnored private(set) var snapshot: TerminalSnapshot? {
+        didSet { surface.publish(snapshot) }
+    }
+    /// The channel the Metal view reads snapshots from.
+    @ObservationIgnored let surface = TerminalSurface()
     private(set) var message: String?
     private(set) var authenticationBanner = ""
     private(set) var authenticationURL: URL?
@@ -148,8 +154,6 @@ final class ConnectionModel: Identifiable {
     /// Shuts off a superseded session's output. Read from the SSH read loop, which no
     /// longer runs on the main actor, so it cannot consult `attempt` directly.
     @ObservationIgnored private var outputGate: OutputGate?
-    /// When the last snapshot reached the view, so the next one can be paced against it.
-    @ObservationIgnored fileprivate var published: ContinuousClock.Instant?
     /// Temporary, for the frame-rate work: prints to the device console once a second.
     @ObservationIgnored fileprivate static var frames = FrameLog()
 
@@ -680,18 +684,7 @@ final class ConnectionModel: Identifiable {
         guard isVisible, !isInBackground, snapshotTask == nil else { return }
         let started = ContinuousClock.now
         snapshotTask = Task { [weak self] in
-            // The parser finishes work far more often than the screen can show it. Publishing
-            // every time costs a SwiftUI invalidation and a view update per snapshot, and the
-            // display drops most of them anyway; that wasted main-thread work is what keeps the
-            // frames that do get drawn from arriving on time. Hold each publication to one
-            // display frame apart. This paces presentation, so it does not make a repaint wait
-            // for the parser the way the drain deadline below does.
-            if let previous = await self?.published {
-                let due = previous.advanced(by: Self.presentationInterval)
-                if ContinuousClock.now < due { try? await Task.sleep(until: due, clock: .continuous) }
-                guard !Task.isCancelled else { return }
-            }
-            let deadline = ContinuousClock.now.advanced(by: Self.maximumSnapshotDelay)
+            let deadline = started.advanced(by: Self.maximumSnapshotDelay)
             while true {
                 guard !Task.isCancelled, let self, self.isVisible, !self.isInBackground else { return }
                 if let value = await self.terminal.snapshotIfDrained() {
@@ -709,15 +702,11 @@ final class ConnectionModel: Identifiable {
                 // frame the interval whether or not there was anything to wait for.
                 try? await Task.sleep(for: Self.snapshotInterval)
             }
-            self?.published = ContinuousClock.now
             ConnectionModel.frames.record(start: started)
             self?.snapshotTask = nil
         }
     }
 
-    /// One frame on a 60Hz panel. Publishing faster than this only adds main-thread work
-    /// for snapshots the display will never show.
-    private static let presentationInterval = Duration.milliseconds(16)
     private static let snapshotInterval = Duration.milliseconds(8)
     /// Output that never pauses never drains, so this deadline decides the frame rate while a
     /// program is writing continuously. One display frame keeps that at 60fps; longer values
