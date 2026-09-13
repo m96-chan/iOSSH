@@ -82,6 +82,8 @@ final class ConnectionModel: Identifiable {
     @ObservationIgnored private var hasPendingCredentialSubmission = false
     @ObservationIgnored private var trustReply: CheckedContinuation<Bool, Never>?
     @ObservationIgnored private var snapshotTask: Task<Void, Never>?
+    /// When the shell last handed over output, used to draw between batches of a repaint.
+    @ObservationIgnored private var lastOutputArrival: ContinuousClock.Instant?
     @ObservationIgnored private var writerTask: Task<Void, Never>?
     @ObservationIgnored private var input: AsyncStream<WriteOperation>.Continuation?
     @ObservationIgnored private var inputGeneration = UUID()
@@ -162,6 +164,7 @@ final class ConnectionModel: Identifiable {
             }
             transport.onData = { [weak self] data in
                 guard let self, self.attempt == token else { return }
+                self.lastOutputArrival = .now
                 self.engine.feed(data)
             }
             transport.onDisconnect = { [weak self] reason in
@@ -554,13 +557,27 @@ final class ConnectionModel: Identifiable {
         }
     }
 
+    /// Output arrives in network-sized batches, so a program repainting the whole screen
+    /// lands over several of them. Drawing between batches shows that repaint in progress,
+    /// which reads as the picture being wiped from the top down. Wait for a gap in the
+    /// output before drawing, and draw anyway once the deadline passes so a continuous
+    /// stream still updates.
     private func scheduleSnapshot() {
         guard isVisible, !isInBackground, snapshotTask == nil else { return }
         snapshotTask = Task { [weak self] in
-            try? await Task.sleep(for: .milliseconds(8))
+            let deadline = ContinuousClock.now.advanced(by: Self.maximumSnapshotDelay)
+            while true {
+                try? await Task.sleep(for: Self.snapshotInterval)
+                guard !Task.isCancelled, let self, self.isVisible, !self.isInBackground else { return }
+                guard ContinuousClock.now < deadline, let arrival = self.lastOutputArrival,
+                      arrival.duration(to: .now) < Self.snapshotInterval else { break }
+            }
             guard !Task.isCancelled, let self, self.isVisible, !self.isInBackground else { return }
             self.snapshot = self.engine.snapshot()
             self.snapshotTask = nil
         }
     }
+
+    private static let snapshotInterval = Duration.milliseconds(8)
+    private static let maximumSnapshotDelay = Duration.milliseconds(48)
 }
