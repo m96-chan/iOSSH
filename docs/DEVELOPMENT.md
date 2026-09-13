@@ -62,6 +62,8 @@ First use shows the server's SHA-256 host-key fingerprint. Compare it through a 
 
 Screen lock and backgrounding retain the SSH session, terminal buffer, and cursor. Returning checks the existing connection and reapplies its current terminal size without authenticating again or opening another shell. Explicit Close/Disconnect still closes the connection. If the peer has closed or no longer responds, the app offers Reconnect; that opens a fresh authenticated shell with host-key verification and cannot recover a shell the server ended. iOS can suspend the app, so retaining a session does not guarantee indefinite background networking. See [Apple's background execution guidance](https://developer.apple.com/documentation/uikit/extending-your-app-s-background-execution-time).
 
+Shell output is read on demand: the app asks the SSH channel for the next batch only after the terminal has consumed the previous one. A burst such as a large directory listing therefore closes the SSH receive window and makes the server wait, instead of queueing unbounded output on the device or dropping bytes and ending the session.
+
 ## Import Tailscale devices
 
 1. Install Tailscale and Shortcuts on the iPhone or iPad, sign in to Tailscale, and keep it connected.
@@ -134,6 +136,45 @@ swift test --package-path Packages/SSHCore --filter SSHIntegrationTests
 ```
 
 Use a disposable test key and account. The test checks PTY output, remote `stty` dimensions, disconnection, and reconnect without a repeated trust prompt. It does not change the app's known-host or credential stores. The integration test skips when its environment variables are absent.
+
+## App Store preparation
+
+The app uses `io.github.m96-chan.iossh` as its bundle identifier and Shortcuts
+callback URL scheme. The shared project leaves `DEVELOPMENT_TEAM` empty; pass
+your team at build time. Builds with this ID install alongside the previous
+`moe.technologies.iossh` app with separate hosts, Keychain credentials, settings,
+known-host records, and imported fonts. These do not migrate automatically.
+Replace the old **Import Tailscale Hosts** shortcut with the file exported from
+the new app, keeping its name, then fetch devices from the new app. See the
+[shortcut migration steps](../shortcuts/README.md#updating-from-the-previous-app-identifier).
+
+[Store listing and review notes](APP_STORE.md), [support](SUPPORT.md), and
+[privacy policy](PRIVACY.md) are drafts until their remaining release inputs are
+filled. The app's privacy manifest declares its app-local UserDefaults access
+with reason `CA92.1`.
+
+Software license text is bundled as `App/Resources/ThirdPartyNotices.txt` and
+available under **Settings → Open source licenses**. After changing dependencies,
+review the linked targets and regenerate it from Xcode's resolved checkouts:
+
+```sh
+python3 scripts/generate_third_party_notices.py --checkouts build/DerivedData/SourcePackages/checkouts
+python3 scripts/generate_third_party_notices.py --checkouts build/DerivedData/SourcePackages/checkouts --check
+```
+
+Use your actual DerivedData path. Generation is offline and reads pinned Git
+objects; bundled C notices include Citadel bcrypt, SwiftNIO's cpp_magic.h,
+BoringSSL, and fiat-crypto. Separate font notices remain in **Font licenses**.
+`xcodegen generate` includes both the notices and app privacy manifest as resources.
+
+Before submission, review the final archive's SDK privacy declarations.
+SwiftTerm 1.20.0 includes `stat`/`fstat` in its Kitty local-file/shared-memory
+transfer implementation and has no privacy manifest. iOSSH handles Kitty
+graphics separately and only accepts direct transfers, so those SDK paths are
+unused here. Whether these retained paths need an iOS-specific SDK change
+remains to be resolved; the presence of those symbols alone is not evidence of
+an App Store rejection, and an unrelated approved API reason must not be added
+to silence validation.
 
 ## Verified locally
 

@@ -12,6 +12,7 @@ struct TailscaleImportRequest: Identifiable {
 final class TailscaleImportInbox {
     static let shared = TailscaleImportInbox()
     static let shortcutName = "Import Tailscale Hosts"
+    static let callbackScheme = "io.github.m96-chan.iossh"
     private(set) var request: TailscaleImportRequest?
     var message: String?
     private var callbackID: UUID?
@@ -47,13 +48,13 @@ final class TailscaleImportInbox {
         components.path = "/run-shortcut"
         components.queryItems = [URLQueryItem(name: "name", value: Self.shortcutName)]
         for (key, path) in [("x-success", "complete"), ("x-error", "error"), ("x-cancel", "cancel")] {
-            components.queryItems?.append(URLQueryItem(name: key, value: "iossh://tailscale-import/\(path)?request=\(id.uuidString)"))
+            components.queryItems?.append(URLQueryItem(name: key, value: "\(Self.callbackScheme)://tailscale-import/\(path)?request=\(id.uuidString)"))
         }
         return components.url!
     }
 
     func handleCallback(_ url: URL) {
-        guard url.scheme == "iossh", url.host == "tailscale-import",
+        guard url.scheme == Self.callbackScheme, url.host == "tailscale-import",
               let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
               let callbackID,
               components.queryItems?.first(where: { $0.name == "request" })?.value == callbackID.uuidString else { return }

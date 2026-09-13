@@ -62,6 +62,8 @@ check mode の承認メッセージは接続中に表示する。Tailscale の H
 
 画面ロック・バックグラウンド移行時は SSH 接続、端末バッファ、カーソルを保持する。復帰時は既存接続を確認して現在の端末サイズを反映し、再認証や別のシェルの起動は行わない。明示的な Close / Disconnect は引き続き接続を閉じる。接続先が閉じた、または応答しなくなった場合は Reconnect を案内する。再接続ではホスト鍵を再検証し、新しい認証済みシェルを開くため、終了したシェルの復元はできない。iOS はアプリをサスペンドすることがあり、セッションを保持してもバックグラウンドでの無期限な通信は保証できない。[Apple のバックグラウンド実行ガイド](https://developer.apple.com/documentation/uikit/extending-your-app-s-background-execution-time)を参照。
 
+シェル出力は必要になった分だけ読み出す。端末が直前の出力を処理してから次のまとまりを SSH チャネルに要求するため、巨大なディレクトリ一覧のような大量出力では SSH の受信ウィンドウが閉じてサーバー側が待機する。端末側に無制限に溜め込んだり、バイトを捨ててセッションを切断したりはしない。
+
 ## Tailscale 端末の取り込み
 
 1. iPhone / iPad に Tailscale と「ショートカット」をインストールし、Tailscale にサインインして接続する。
@@ -134,6 +136,23 @@ swift test --package-path Packages/SSHCore --filter SSHIntegrationTests
 ```
 
 テスト専用の鍵・アカウントを使う。PTY 出力、リモートの `stty` によるサイズ確認、切断、ホスト鍵を再承認しない再接続を検証する。アプリの信頼済みホストや資格情報ストアは変更しない。環境変数がない場合、このテストはスキップする。
+
+## App Store公開準備
+
+Bundle IDとShortcutsのコールバックURLスキームは `io.github.m96-chan.iossh` を使う。共有プロジェクトの `DEVELOPMENT_TEAM` は空のままにし、ビルド時にチームを指定する。旧 `moe.technologies.iossh` とは別アプリとして共存し、保存済みホスト、Keychainの資格情報、設定、信頼済みホスト鍵、追加フォントは自動移行されない。新アプリから書き出したファイルで旧 **Import Tailscale Hosts** ショートカットを同名のまま置き換え、新アプリから端末一覧を取得する。[ショートカットの移行手順](../shortcuts/README.md#updating-from-the-previous-app-identifier)を参照。
+
+[ストア掲載文と審査メモ](APP_STORE.jp.md)、[サポート](SUPPORT.jp.md)、[プライバシーポリシー](PRIVACY.jp.md)は、公開に必要な残りの情報を確定するまで草案とする。アプリのプライバシーマニフェストは、アプリ内設定用のUserDefaultsへのアクセスを理由 `CA92.1` で申告している。
+
+ソフトウェアのライセンス本文は `App/Resources/ThirdPartyNotices.txt` に同梱し、**Settings → Open source licenses**から閲覧できる。依存更新時はリンク対象を確認し、Xcodeが解決したチェックアウトから再生成する。
+
+```sh
+python3 scripts/generate_third_party_notices.py --checkouts build/DerivedData/SourcePackages/checkouts
+python3 scripts/generate_third_party_notices.py --checkouts build/DerivedData/SourcePackages/checkouts --check
+```
+
+実際に使用したDerivedDataのパスを指定する。生成処理は通信せず、固定されたGitオブジェクトを読む。Citadelのbcrypt、SwiftNIOのcpp_magic.h、BoringSSL、fiat-cryptoのC実装の表記も含む。フォントの表記は別の**Font licenses**にある。`xcodegen generate`で、本文とアプリのプライバシーマニフェストをリソースへ追加する。
+
+提出前には、最終アーカイブに含むSDKのプライバシー申告を確認する。SwiftTerm 1.20.0にはKittyのローカルファイル・共有メモリ転送に `stat` / `fstat` があり、独自のプライバシーマニフェストはない。iOSSHはKitty画像を別処理で扱い、直接転送だけを受け付けるため、このSDK内の処理は使用しない。残るコードに対してiOS向けSDKの変更が必要かは引き続き確認する。シンボルが含まれることだけでApp Storeの拒否を断定せず、検証を通すために用途の異なる承認理由を追加しない。
 
 ## ローカルで確認済みの項目
 

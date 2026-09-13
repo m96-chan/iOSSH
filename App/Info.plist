@@ -24,10 +24,10 @@
 	<array>
 		<dict>
 			<key>CFBundleURLName</key>
-			<string>moe.technologies.iossh.shortcuts</string>
+			<string>io.github.m96-chan.iossh.shortcuts</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>iossh</string>
+				<string>io.github.m96-chan.iossh</string>
 			</array>
 		</dict>
 	</array>
