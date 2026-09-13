@@ -18,6 +18,7 @@ struct TerminalScreen: View {
     @State private var activeSheet: TerminalSheet?
     @State private var lastSheet: TerminalSheet?
     @State private var localFocusRequest = UUID()
+    @State private var tailscaleInbox = TailscaleImportInbox.shared
 
     private var theme: TerminalTheme { themeName == "light" ? .light : .dark }
 
@@ -46,6 +47,7 @@ struct TerminalScreen: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
                         Button("Appearance", systemImage: "textformat.size") { present(.settings) }
+                        Button("Import from Tailscale", systemImage: "arrow.down.circle") { present(.tailscaleImport) }
                         Button("Scroll to Bottom", systemImage: "arrow.down.to.line") { model.engine.scrollToBottom() }
                         if model.phase == .connected || model.phase == .checking {
                             Button("Disconnect", systemImage: "network.slash") { Task { await model.close() } }
@@ -60,6 +62,7 @@ struct TerminalScreen: View {
         .sheet(item: $activeSheet, onDismiss: sheetDidDismiss) { item in
             switch item.content {
             case .settings: SettingsView()
+            case .tailscaleImport: TailscaleImportView()
             case .credential(let connection, let requestID, let attemptID):
                 CredentialPromptView(host: connection.host, later: isWorkspace ? {
                     connection.deferAuthentication(attemptID: attemptID)
@@ -81,12 +84,14 @@ struct TerminalScreen: View {
             case .browser(_, _, let url): AuthenticationBrowser(url: url)
             }
         }
-        .onAppear { model.apply(theme: theme); model.connectOnFirstAppearance(); presentAuthentication() }
+        .onAppear { model.apply(theme: theme); model.connectOnFirstAppearance(); presentAuthentication(); presentTailscaleImportIfNeeded() }
+        .onChange(of: tailscaleInbox.request?.id) { _, _ in presentTailscaleImportIfNeeded() }
         .onChange(of: model.id) { _, _ in
-            if let previous = activeSheet { previous.deferAuthentication(); activeSheet = nil }
+            if let previous = activeSheet, previous.isAuthentication { previous.deferAuthentication(); activeSheet = nil }
             model.apply(theme: theme)
             localFocusRequest = UUID()
             presentAuthentication()
+            presentTailscaleImportIfNeeded()
         }
         .onChange(of: themeName) { _, _ in model.apply(theme: theme) }
         .onChange(of: model.credentialPrompt) { _, _ in presentAuthentication() }
@@ -94,11 +99,12 @@ struct TerminalScreen: View {
         .onChange(of: model.trustPrompt?.id) { _, _ in presentAuthentication() }
         .onChange(of: model.isAuthenticationDeferred) { _, _ in presentAuthentication() }
         .onChange(of: allowsAuthentication) { _, allowed in
-            if allowed { localFocusRequest = UUID(); presentAuthentication() }
+            if allowed { localFocusRequest = UUID(); presentAuthentication(); presentTailscaleImportIfNeeded() }
         }
         .onChange(of: focusRequest) { _, _ in localFocusRequest = UUID() }
         .onChange(of: model.phase) { _, phase in
             if phase != .connecting, activeSheet?.isAuthentication == true { activeSheet = nil }
+            presentTailscaleImportIfNeeded()
         }
     }
 
@@ -209,6 +215,13 @@ struct TerminalScreen: View {
         }
     }
 
+    private func presentTailscaleImportIfNeeded() {
+        guard model.isVisible, tailscaleInbox.needsPresentation, activeSheet == nil, lastSheet == nil,
+              allowsAuthentication, model.phase != .connecting, !model.needsAuthenticationAttention else { return }
+        tailscaleInbox.markPresented()
+        present(.tailscaleImport)
+    }
+
     private func sheetDidDismiss() {
         if case .credential(let connection, let requestID, let attemptID) = lastSheet?.content {
             connection.credentialSheetDidDismiss(requestID: requestID, attemptID: attemptID)
@@ -216,26 +229,33 @@ struct TerminalScreen: View {
         lastSheet = nil
         localFocusRequest = UUID()
         presentAuthentication()
+        presentTailscaleImportIfNeeded()
     }
 }
 
 private struct TerminalSheet: Identifiable {
     enum Content {
         case settings
+        case tailscaleImport
         case credential(ConnectionModel, UUID, UUID)
         case trust(ConnectionModel, ConnectionModel.TrustPrompt)
         case browser(ConnectionModel, UUID, URL)
     }
     let id = UUID()
     let content: Content
-    var isAuthentication: Bool { if case .settings = content { false } else { true } }
+    var isAuthentication: Bool {
+        switch content {
+        case .settings, .tailscaleImport: false
+        default: true
+        }
+    }
 
     @MainActor func deferAuthentication() {
         switch content {
         case .credential(let connection, _, let attempt), .browser(let connection, let attempt, _):
             connection.deferAuthentication(attemptID: attempt)
         case .trust(let connection, let prompt): connection.deferAuthentication(attemptID: prompt.attemptID)
-        case .settings: break
+        case .settings, .tailscaleImport: break
         }
     }
 }

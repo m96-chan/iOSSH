@@ -9,11 +9,13 @@ struct HostListView: View {
     @Query(sort: \HostRecord.createdAt) private var hosts: [HostRecord]
     @State private var workspace: WorkspaceSessionStore
     @State private var sheet: HostSheet?
+    @State private var hasPresentedSheet = false
     @State private var errorMessage: String?
     @State private var showingLimit = false
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var compactColumn: NavigationSplitViewColumn = .detail
     @State private var terminalFocusRequest = UUID()
+    @State private var tailscaleInbox = TailscaleImportInbox.shared
 
     private var isPad: Bool { UIDevice.current.userInterfaceIdiom == .pad }
 
@@ -50,15 +52,21 @@ struct HostListView: View {
                     }
             }
         }
-        .sheet(item: $sheet, onDismiss: { terminalFocusRequest = UUID() }) { item in
+        .sheet(item: $sheet, onDismiss: {
+            hasPresentedSheet = sheet != nil
+            terminalFocusRequest = UUID()
+            presentTailscaleImportIfNeeded()
+        }) { item in
             Group {
                 switch item {
                 case .newHost: HostEditorView()
                 case .editHost(let host): HostEditorView(host: host)
                 case .settings: SettingsView()
                 case .hosts(let newSession): hostPicker(newSession: newSession)
+                case .tailscaleImport: TailscaleImportView()
                 }
             }
+            .onAppear { hasPresentedSheet = true }
         }
         .alert("Couldn’t remove host", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
             Button("OK", role: .cancel) { errorMessage = nil }
@@ -70,6 +78,8 @@ struct HostListView: View {
             if phase == .background { workspace.enterBackground() }
             else if phase == .active { workspace.enterForeground() }
         }
+        .onChange(of: tailscaleInbox.request?.id, initial: true) { _, _ in presentTailscaleImportIfNeeded() }
+        .onChange(of: workspace.selectedID) { _, _ in presentTailscaleImportIfNeeded() }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in
             workspace.imageBudget.removeAll()
         }
@@ -133,6 +143,10 @@ struct HostListView: View {
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Button("Add Host", systemImage: "plus") { sheet = .newHost }.accessibilityIdentifier("addHost")
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("Import from Tailscale", systemImage: "arrow.down.circle") { sheet = .tailscaleImport }
+                    .accessibilityIdentifier("importTailscaleHosts")
             }
         }
     }
@@ -219,7 +233,7 @@ struct HostListView: View {
     }
 
     private func terminal(_ model: ConnectionModel) -> some View {
-        TerminalScreen(model: model, isWorkspace: isPad, allowsAuthentication: sheet == nil,
+        TerminalScreen(model: model, isWorkspace: isPad, allowsAuthentication: sheet == nil && !hasPresentedSheet,
                        focusRequest: terminalFocusRequest, onClose: { workspace.close(id: model.id) },
                        onWorkspaceCommand: isPad ? handleCommand : nil)
     }
@@ -261,6 +275,7 @@ struct HostListView: View {
                     }
                 }
                 Section {
+                    Button("Import from Tailscale", systemImage: "arrow.down.circle") { sheet = .tailscaleImport }
                     Button("Settings", systemImage: "gearshape") { sheet = .settings }
                         .accessibilityIdentifier("hostPickerSettings")
                 }
@@ -279,6 +294,13 @@ struct HostListView: View {
     private func open(_ host: SSHHost, newSession: Bool = false) {
         if !workspace.open(host: host, newSession: newSession) { showingLimit = true }
         compactColumn = .detail
+    }
+
+    private func presentTailscaleImportIfNeeded() {
+        // A visible terminal owns its sheets, including pending authentication.
+        guard tailscaleInbox.needsPresentation, sheet == nil, !hasPresentedSheet, workspace.selectedSession == nil else { return }
+        tailscaleInbox.markPresented()
+        sheet = .tailscaleImport
     }
 
     private func newSession() {
@@ -324,13 +346,14 @@ struct HostListView: View {
 }
 
 private enum HostSheet: Identifiable {
-    case newHost, editHost(HostRecord), settings, hosts(newSession: Bool)
+    case newHost, editHost(HostRecord), settings, hosts(newSession: Bool), tailscaleImport
     var id: String {
         switch self {
         case .newHost: "newHost"
         case .editHost(let host): "edit-\(host.id)"
         case .settings: "settings"
         case .hosts(let new): "hosts-\(new)"
+        case .tailscaleImport: "tailscaleImport"
         }
     }
 }

@@ -16,6 +16,8 @@ The iPad build now includes the dedicated [iPad workspace](#ipad-ui): an adaptiv
 
 Implemented authentication: passwords, OpenSSH Ed25519 keys (including supported encrypted keys), unencrypted ECDSA PEM keys, and Tailscale SSH using the connected Tailscale app. Choose **Tailscale SSH** to connect by device name without entering a password or key; check-mode sign-in links appear when requested by the server. The current SSH dependency does not implement keyboard-interactive; RSA is also unavailable. These methods are not offered by the app.
 
+**Import from Tailscale** obtains devices through Tailscale's official **Find Devices** Shortcuts action, then lets you select hosts and enter their SSH username in iOSSH. It requires no API token. A signed shortcut is bundled under **Set Up Shortcut**; see the [setup instructions](docs/DEVELOPMENT.md#import-tailscale-devices). Listed devices still need Tailscale SSH enabled and access allowed by their tailnet policy.
+
 Rendering includes a CoreText glyph atlas, instanced Metal drawing, 24-bit colors, keyboard shortcuts and accessory keys, selection/copy/paste, scrollback, and dark/light themes. Kitty direct RGB/RGBA/PNG transfers have bounded storage. Graphics animation, compressed transfers, relative placements, and explicit source cropping remain unsupported. Ordinary image placements are cleared on resize; Unicode placeholder placements follow the text and survive reflow.
 
 The bundled HackGen Console NF font provides Japanese and Starship/Nerd Font symbols at a default size of 9 pt. Noto Sans CJK JP is bundled as the explicit Japanese fallback for missing glyphs, including when using an imported font. Settings can import additional monospaced TTF/OTF fonts from Files for use inside iOSSH. Glyphs fit the terminal's cell widths, and the visible grid is updated around the keyboard and accessory row when returning to the app or reconnecting. Japanese input uses UIKit composition and sends text only after confirmation.
@@ -43,6 +45,7 @@ Targets **both iPhone and iPad**, running **iOS / iPadOS 17+** (with Metal 3 and
 ### Included in v1
 
 - Add and edit hosts
+- Import selected Tailscale devices through the official Shortcuts action, without an API token
 - Authentication: password / public key / keyboard-interactive
 - Store credentials in Keychain, protected by Face ID / Touch ID
 - Host key verification (TOFU + persistent storage equivalent to `known_hosts`, with warnings on changes)

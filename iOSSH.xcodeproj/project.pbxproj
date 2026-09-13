@@ -9,6 +9,8 @@
 /* Begin PBXBuildFile section */
 		09B00D9624EEB48DCF1CED77 /* ConnectionModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC618C3030669A58E650FC53 /* ConnectionModelTests.swift */; };
 		0A37B46631C09EB022B91999 /* WorkspaceSessionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C9A6999274AAB9CA7E0E5DF /* WorkspaceSessionStore.swift */; };
+		126F1F2E6A74A9F1358D33A7 /* TailscaleHostImport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A53EAFCE919B8B842360534F /* TailscaleHostImport.swift */; };
+		1A27F80BD8BA8845F5431492 /* TailscaleImportInbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF3D87F64507E681986AEBE8 /* TailscaleImportInbox.swift */; };
 		280E96841D6B5FB2DA1950EA /* TerminalRender in Frameworks */ = {isa = PBXBuildFile; productRef = 0130968861023AF2207E184C /* TerminalRender */; };
 		375F741B0F46FCFBDD506F79 /* TerminalViewportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11265FA4D2A5C381E689173 /* TerminalViewportTests.swift */; };
 		407DB701B5407F8FC90DAD8E /* WorkspaceSessionStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37332A336F0E66A67B9D04C1 /* WorkspaceSessionStoreTests.swift */; };
@@ -20,7 +22,9 @@
 		706F45A9C7157D1CA3EA654C /* ConnectionModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE7715EA1A26DB00BC41EB0C /* ConnectionModel.swift */; };
 		85A7403002AEFDFC2C5BF570 /* TerminalResizeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0142BF3A0264E4CB2FC4A704 /* TerminalResizeTests.swift */; };
 		8D2E35E605963429BD612C59 /* TerminalScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7188BD088FE6300D2A9269FB /* TerminalScreen.swift */; };
+		8F4B8DAFEB8A0D194C6CF2C0 /* TailscaleImportPresentationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63EC633085171C49B8D95F72 /* TailscaleImportPresentationTests.swift */; };
 		903CE9BF45D214388BF6D148 /* iOSSHUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0660D09E764518561AAAB9CE /* iOSSHUITests.swift */; };
+		915A3A7E7C7CE63EE678F12A /* TailscaleImportInboxTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65B1CB2968F3BCF2DEA5E2EC /* TailscaleImportInboxTests.swift */; };
 		98D885FE7E950703592F9A9C /* HostRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = 731526C7B108797D5F45E403 /* HostRecord.swift */; };
 		A917570701758B4830BAF55F /* SSHCore in Frameworks */ = {isa = PBXBuildFile; productRef = 38163878A4BC6D62D763B30D /* SSHCore */; };
 		AB1D90C2A88DAC5B0A78F4AE /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2EA31AA44F8518AA368AF766 /* SettingsView.swift */; };
@@ -31,8 +35,12 @@
 		C7969DFDF165C28DBB2963D6 /* TerminalFontLibraryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CB0BC27787CF8C4490CD014 /* TerminalFontLibraryTests.swift */; };
 		D18D09E95C6FB0D022EE139E /* TerminalInputTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3481CB020510DBA908C3300 /* TerminalInputTests.swift */; };
 		D341BFE2D1EA934CE964B2A0 /* TerminalBlockGraphicsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E6B331D739759053C031371 /* TerminalBlockGraphicsTests.swift */; };
+		DF146B154BAA8213E7B1B8E9 /* Import Tailscale Hosts.shortcut in Resources */ = {isa = PBXBuildFile; fileRef = 63B7BC0CF805FC4D8AF1B475 /* Import Tailscale Hosts.shortcut */; };
+		E299A2FA4BEE670E0E2B52B9 /* TailscaleHostImportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEA5544B29897C3F1E2591D5 /* TailscaleHostImportTests.swift */; };
 		E70691CE9ADDC45D2BEB9E91 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F9211EEB2F9FE7191DDA0A91 /* Assets.xcassets */; };
 		E91839CE51901FE6F41107AE /* TerminalOutputTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79832E5C775352D87B6AA169 /* TerminalOutputTests.swift */; };
+		EEBBF911C1080FB513189120 /* TailscaleImportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35A037EB5FE89576681C48D4 /* TailscaleImportView.swift */; };
+		EFBBA1911C95BC26AB6B7E43 /* TailscaleImportUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27587AAB792BED1360F24EF3 /* TailscaleImportUITests.swift */; };
 		F009168C381D399C08D1F85C /* HostListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CE3DBF767613DEA56210592 /* HostListView.swift */; };
 /* End PBXBuildFile section */
 
@@ -58,13 +66,18 @@
 		0660D09E764518561AAAB9CE /* iOSSHUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = iOSSHUITests.swift; sourceTree = "<group>"; };
 		0FFC2F0CD866D558B0ED0BBC /* TailscaleAuthentication.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TailscaleAuthentication.swift; sourceTree = "<group>"; };
 		1E7DD19FF9DCC45E75A2F9D9 /* TerminalFontLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalFontLibrary.swift; sourceTree = "<group>"; };
+		27587AAB792BED1360F24EF3 /* TailscaleImportUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TailscaleImportUITests.swift; sourceTree = "<group>"; };
 		2EA31AA44F8518AA368AF766 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		35A037EB5FE89576681C48D4 /* TailscaleImportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TailscaleImportView.swift; sourceTree = "<group>"; };
 		37332A336F0E66A67B9D04C1 /* WorkspaceSessionStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceSessionStoreTests.swift; sourceTree = "<group>"; };
 		39B02CC9A8E0EC4194268803 /* iOSSHUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = iOSSHUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		3CE3DBF767613DEA56210592 /* HostListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostListView.swift; sourceTree = "<group>"; };
 		4916B8C433035DB9827E8DF6 /* SSHCore */ = {isa = PBXFileReference; lastKnownFileType = folder; name = SSHCore; path = Packages/SSHCore; sourceTree = SOURCE_ROOT; };
 		5E6B331D739759053C031371 /* TerminalBlockGraphicsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalBlockGraphicsTests.swift; sourceTree = "<group>"; };
+		63B7BC0CF805FC4D8AF1B475 /* Import Tailscale Hosts.shortcut */ = {isa = PBXFileReference; path = "Import Tailscale Hosts.shortcut"; sourceTree = "<group>"; };
+		63EC633085171C49B8D95F72 /* TailscaleImportPresentationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TailscaleImportPresentationTests.swift; sourceTree = "<group>"; };
 		6582940BDC26ABD3D4A5ECC0 /* iOSSH.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = iOSSH.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		65B1CB2968F3BCF2DEA5E2EC /* TailscaleImportInboxTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TailscaleImportInboxTests.swift; sourceTree = "<group>"; };
 		6C9A6999274AAB9CA7E0E5DF /* WorkspaceSessionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceSessionStore.swift; sourceTree = "<group>"; };
 		6D1E0C43310C3EB044EB52DB /* iPadWorkspaceUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = iPadWorkspaceUITests.swift; sourceTree = "<group>"; };
 		7188BD088FE6300D2A9269FB /* TerminalScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalScreen.swift; sourceTree = "<group>"; };
@@ -72,12 +85,15 @@
 		79832E5C775352D87B6AA169 /* TerminalOutputTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalOutputTests.swift; sourceTree = "<group>"; };
 		8CB0BC27787CF8C4490CD014 /* TerminalFontLibraryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalFontLibraryTests.swift; sourceTree = "<group>"; };
 		9DD4F05CEEF4A486E17BCFC1 /* TerminalCore */ = {isa = PBXFileReference; lastKnownFileType = folder; name = TerminalCore; path = Packages/TerminalCore; sourceTree = SOURCE_ROOT; };
+		A53EAFCE919B8B842360534F /* TailscaleHostImport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TailscaleHostImport.swift; sourceTree = "<group>"; };
 		A65499EC7081306038E361E1 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		A820ABD787EFF5FD17D36CD0 /* iOSSHApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = iOSSHApp.swift; sourceTree = "<group>"; };
 		B77019520186EBCCB9A49939 /* TerminalFontTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalFontTests.swift; sourceTree = "<group>"; };
 		BD652AE272B9A63048557543 /* WorkspaceLayoutTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceLayoutTests.swift; sourceTree = "<group>"; };
+		BF3D87F64507E681986AEBE8 /* TailscaleImportInbox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TailscaleImportInbox.swift; sourceTree = "<group>"; };
 		C11265FA4D2A5C381E689173 /* TerminalViewportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalViewportTests.swift; sourceTree = "<group>"; };
 		C3481CB020510DBA908C3300 /* TerminalInputTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalInputTests.swift; sourceTree = "<group>"; };
+		CEA5544B29897C3F1E2591D5 /* TailscaleHostImportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TailscaleHostImportTests.swift; sourceTree = "<group>"; };
 		DC54B35541FEAEB0228D113C /* KeyboardResizeUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardResizeUITests.swift; sourceTree = "<group>"; };
 		DDCDC6BD4F31DC56C1FB8334 /* iOSSHTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = iOSSHTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		E782EE91A91CF8D57B4C2647 /* HostEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostEditorView.swift; sourceTree = "<group>"; };
@@ -117,6 +133,7 @@
 				0660D09E764518561AAAB9CE /* iOSSHUITests.swift */,
 				6D1E0C43310C3EB044EB52DB /* iPadWorkspaceUITests.swift */,
 				DC54B35541FEAEB0228D113C /* KeyboardResizeUITests.swift */,
+				27587AAB792BED1360F24EF3 /* TailscaleImportUITests.swift */,
 			);
 			path = UITests;
 			sourceTree = "<group>";
@@ -125,6 +142,9 @@
 			isa = PBXGroup;
 			children = (
 				FC618C3030669A58E650FC53 /* ConnectionModelTests.swift */,
+				CEA5544B29897C3F1E2591D5 /* TailscaleHostImportTests.swift */,
+				65B1CB2968F3BCF2DEA5E2EC /* TailscaleImportInboxTests.swift */,
+				63EC633085171C49B8D95F72 /* TailscaleImportPresentationTests.swift */,
 				5E6B331D739759053C031371 /* TerminalBlockGraphicsTests.swift */,
 				8CB0BC27787CF8C4490CD014 /* TerminalFontLibraryTests.swift */,
 				B77019520186EBCCB9A49939 /* TerminalFontTests.swift */,
@@ -144,6 +164,7 @@
 				E30CAA5A4EA2066B45925270 /* App */,
 				80A944E8A9C6E90BB7D50E9B /* AppTests */,
 				B9564A5D52A397E34DAF1DE6 /* Packages */,
+				F00F91F5FF05EAE553F61F79 /* shortcuts */,
 				7C6ED21E989E54A1A711399C /* UITests */,
 				2B0396B1E13EE6C041A1E2C4 /* Products */,
 			);
@@ -171,11 +192,22 @@
 				A820ABD787EFF5FD17D36CD0 /* iOSSHApp.swift */,
 				2EA31AA44F8518AA368AF766 /* SettingsView.swift */,
 				0FFC2F0CD866D558B0ED0BBC /* TailscaleAuthentication.swift */,
+				A53EAFCE919B8B842360534F /* TailscaleHostImport.swift */,
+				BF3D87F64507E681986AEBE8 /* TailscaleImportInbox.swift */,
+				35A037EB5FE89576681C48D4 /* TailscaleImportView.swift */,
 				1E7DD19FF9DCC45E75A2F9D9 /* TerminalFontLibrary.swift */,
 				7188BD088FE6300D2A9269FB /* TerminalScreen.swift */,
 				6C9A6999274AAB9CA7E0E5DF /* WorkspaceSessionStore.swift */,
 			);
 			path = App;
+			sourceTree = "<group>";
+		};
+		F00F91F5FF05EAE553F61F79 /* shortcuts */ = {
+			isa = PBXGroup;
+			children = (
+				63B7BC0CF805FC4D8AF1B475 /* Import Tailscale Hosts.shortcut */,
+			);
+			path = shortcuts;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -292,6 +324,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				E70691CE9ADDC45D2BEB9E91 /* Assets.xcassets in Resources */,
+				DF146B154BAA8213E7B1B8E9 /* Import Tailscale Hosts.shortcut in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -303,6 +336,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				434804C23161B0F2B6237EDD /* KeyboardResizeUITests.swift in Sources */,
+				EFBBA1911C95BC26AB6B7E43 /* TailscaleImportUITests.swift in Sources */,
 				903CE9BF45D214388BF6D148 /* iOSSHUITests.swift in Sources */,
 				62771FFD9ACCA67D5D9B5D86 /* iPadWorkspaceUITests.swift in Sources */,
 			);
@@ -313,6 +347,9 @@
 			buildActionMask = 2147483647;
 			files = (
 				09B00D9624EEB48DCF1CED77 /* ConnectionModelTests.swift in Sources */,
+				E299A2FA4BEE670E0E2B52B9 /* TailscaleHostImportTests.swift in Sources */,
+				915A3A7E7C7CE63EE678F12A /* TailscaleImportInboxTests.swift in Sources */,
+				8F4B8DAFEB8A0D194C6CF2C0 /* TailscaleImportPresentationTests.swift in Sources */,
 				D341BFE2D1EA934CE964B2A0 /* TerminalBlockGraphicsTests.swift in Sources */,
 				C7969DFDF165C28DBB2963D6 /* TerminalFontLibraryTests.swift in Sources */,
 				BA6AECCD800D72CE129DC4E4 /* TerminalFontTests.swift in Sources */,
@@ -335,6 +372,9 @@
 				98D885FE7E950703592F9A9C /* HostRecord.swift in Sources */,
 				AB1D90C2A88DAC5B0A78F4AE /* SettingsView.swift in Sources */,
 				BE99510FCB268470B6D7B28F /* TailscaleAuthentication.swift in Sources */,
+				126F1F2E6A74A9F1358D33A7 /* TailscaleHostImport.swift in Sources */,
+				1A27F80BD8BA8845F5431492 /* TailscaleImportInbox.swift in Sources */,
+				EEBBF911C1080FB513189120 /* TailscaleImportView.swift in Sources */,
 				55459D363C125EAF131E7468 /* TerminalFontLibrary.swift in Sources */,
 				8D2E35E605963429BD612C59 /* TerminalScreen.swift in Sources */,
 				0A37B46631C09EB022B91999 /* WorkspaceSessionStore.swift in Sources */,
@@ -455,7 +495,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				CURRENT_PROJECT_VERSION = 10;
+				CURRENT_PROJECT_VERSION = 11;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = App/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -509,7 +549,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				CURRENT_PROJECT_VERSION = 10;
+				CURRENT_PROJECT_VERSION = 11;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = App/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (

@@ -8,6 +8,9 @@ struct iOSSHApp: App {
     init() {
         do {
             let testing = ProcessInfo.processInfo.arguments.contains("--ui-testing")
+            if testing, ProcessInfo.processInfo.arguments.contains("--ui-testing-tailscale-import") {
+                try TailscaleImportInbox.shared.receive(hostnames: ["atlas.tail-example.ts.net", "zephyr.tail-example.ts.net", "100.64.0.23"])
+            }
             if !testing {
                 _ = try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask,
                                                 appropriateFor: nil, create: true)
@@ -26,6 +29,7 @@ struct iOSSHApp: App {
                 HostListView()
                     .modelContainer(container)
                     .tint(.mint)
+                    .onOpenURL { TailscaleImportInbox.shared.handleCallback($0) }
             case .failure(let error):
                 ContentUnavailableView("Couldn’t open your hosts", systemImage: "externaldrive.badge.exclamationmark",
                                        description: Text(error.localizedDescription))

@@ -16,6 +16,8 @@ iPad ビルドには専用の [iPad ワークスペース](#ipad-ui) を実装�
 
 認証はパスワード、OpenSSH 形式の Ed25519 鍵（対応する暗号化鍵を含む）、暗号化されていない ECDSA PEM 鍵、接続済みの Tailscale アプリを利用する Tailscale SSH に対応。**Tailscale SSH** を選ぶと、パスワードや鍵を入力せず端末名で接続でき、サーバーが check mode の承認を要求した場合はサインイン用リンクを表示する。現在の SSH 依存ライブラリには keyboard-interactive の実装がなく、RSA も未対応のため、アプリでは選択できない。
 
+**Import from Tailscale** では、Tailscale 公式のショートカットアクション **Find Devices** で端末を取得し、iOSSH 内で登録する端末と SSH ユーザー名を指定できる。API トークンは不要。署名済みショートカットを **Set Up Shortcut** に同梱している。[導入手順](docs/DEVELOPMENT.jp.md#tailscale-端末の取り込み)を参照。取得した端末への接続には、接続先の Tailscale SSH 有効化と tailnet ポリシーによる許可が必要。
+
 CoreText のグリフアトラス、Metal のインスタンス描画、24bit 色、キーボード操作・補助キー、選択・コピー・ペースト、scrollback、ダーク / ライトテーマを実装。Kitty の direct RGB / RGBA / PNG 転送には保存容量の上限を設けている。画像アニメーション、圧縮転送、相対配置、明示的な画像クロップは未対応。リサイズ時は通常の画像配置を破棄するが、Unicode placeholder の配置はテキストに追従して reflow 後も保持する。
 
 日本語と Starship / Nerd Font の記号に対応する HackGen Console NF を標準同梱し、初期サイズは 9pt とする。未収録の日本語文字は、追加したフォントを使う場合も含め、同梱の Noto Sans CJK JP で補う。設定から「ファイル」の等幅 TTF / OTF フォントを追加し、iOSSH 内で選択できる。グリフを端末のセル幅に収め、アプリ復帰・再接続時もキーボードと補助キー行に合わせて表示領域を更新する。日本語入力には UIKit の変換機能を使い、確定した文字だけを送信する。
@@ -43,6 +45,7 @@ VT パースは現時点では `MainActor` 上で行う。専用 actor への移
 ### v1 でやること
 
 - ホスト一覧の登録・編集
+- Tailscale 公式ショートカット経由の端末取得と選択登録（API トークン不要）
 - 認証: パスワード / 公開鍵 / keyboard-interactive
 - 資格情報を Keychain に保存、Face ID / Touch ID で保護
 - ホスト鍵検証（TOFU + `known_hosts` 相当の永続化、変更時は警告）
