@@ -13,6 +13,7 @@
 		126F1F2E6A74A9F1358D33A7 /* TailscaleHostImport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A53EAFCE919B8B842360534F /* TailscaleHostImport.swift */; };
 		1A27F80BD8BA8845F5431492 /* TailscaleImportInbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF3D87F64507E681986AEBE8 /* TailscaleImportInbox.swift */; };
 		280E96841D6B5FB2DA1950EA /* TerminalRender in Frameworks */ = {isa = PBXBuildFile; productRef = 0130968861023AF2207E184C /* TerminalRender */; };
+		34789C86E04E9350FF66A3F2 /* GhosttyEngine in Frameworks */ = {isa = PBXBuildFile; productRef = 33892EBDFF6FA3FEA57EB471 /* GhosttyEngine */; };
 		3492C275BD7A4FCD99475FF6 /* ThirdPartyNotices.txt in Resources */ = {isa = PBXBuildFile; fileRef = ABDE0513C54E763730592D8B /* ThirdPartyNotices.txt */; };
 		375F741B0F46FCFBDD506F79 /* TerminalViewportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11265FA4D2A5C381E689173 /* TerminalViewportTests.swift */; };
 		407DB701B5407F8FC90DAD8E /* WorkspaceSessionStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37332A336F0E66A67B9D04C1 /* WorkspaceSessionStoreTests.swift */; };
@@ -87,6 +88,7 @@
 		731526C7B108797D5F45E403 /* HostRecord.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostRecord.swift; sourceTree = "<group>"; };
 		79832E5C775352D87B6AA169 /* TerminalOutputTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalOutputTests.swift; sourceTree = "<group>"; };
 		8CB0BC27787CF8C4490CD014 /* TerminalFontLibraryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalFontLibraryTests.swift; sourceTree = "<group>"; };
+		911D7DEF8CB2D674031B953C /* GhosttyEngine */ = {isa = PBXFileReference; lastKnownFileType = folder; name = GhosttyEngine; path = spike/GhosttyEngine; sourceTree = SOURCE_ROOT; };
 		9DD4F05CEEF4A486E17BCFC1 /* TerminalCore */ = {isa = PBXFileReference; lastKnownFileType = folder; name = TerminalCore; path = Packages/TerminalCore; sourceTree = SOURCE_ROOT; };
 		A53EAFCE919B8B842360534F /* TailscaleHostImport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TailscaleHostImport.swift; sourceTree = "<group>"; };
 		A65499EC7081306038E361E1 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
@@ -117,6 +119,7 @@
 				A917570701758B4830BAF55F /* SSHCore in Frameworks */,
 				452F0962A60927EC0305DFA4 /* TerminalCore in Frameworks */,
 				280E96841D6B5FB2DA1950EA /* TerminalRender in Frameworks */,
+				34789C86E04E9350FF66A3F2 /* GhosttyEngine in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -180,6 +183,7 @@
 		B9564A5D52A397E34DAF1DE6 /* Packages */ = {
 			isa = PBXGroup;
 			children = (
+				911D7DEF8CB2D674031B953C /* GhosttyEngine */,
 				4916B8C433035DB9827E8DF6 /* SSHCore */,
 				9DD4F05CEEF4A486E17BCFC1 /* TerminalCore */,
 				EC2D89A4577901E0FF70B5FB /* TerminalRender */,
@@ -283,6 +287,7 @@
 				38163878A4BC6D62D763B30D /* SSHCore */,
 				4E52DB1E4E668CA302F66D9C /* TerminalCore */,
 				0130968861023AF2207E184C /* TerminalRender */,
+				33892EBDFF6FA3FEA57EB471 /* GhosttyEngine */,
 			);
 			productName = iOSSH;
 			productReference = 6582940BDC26ABD3D4A5ECC0 /* iOSSH.app */;
@@ -319,6 +324,7 @@
 			mainGroup = 81C89A0121B536FEDAD70BA2;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
+				7E6FA5B1325BF32187EAA758 /* XCLocalSwiftPackageReference "spike/GhosttyEngine" */,
 				55C826B0FBEB139E78B26EC0 /* XCLocalSwiftPackageReference "Packages/SSHCore" */,
 				51838C0FD7659FD6A5A20066 /* XCLocalSwiftPackageReference "Packages/TerminalCore" */,
 				B6A55A05C85A766D24D17B44 /* XCLocalSwiftPackageReference "Packages/TerminalRender" */,
@@ -699,6 +705,10 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = Packages/SSHCore;
 		};
+		7E6FA5B1325BF32187EAA758 /* XCLocalSwiftPackageReference "spike/GhosttyEngine" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = spike/GhosttyEngine;
+		};
 		B6A55A05C85A766D24D17B44 /* XCLocalSwiftPackageReference "Packages/TerminalRender" */ = {
 			isa = XCLocalSwiftPackageReference;
 			relativePath = Packages/TerminalRender;
@@ -709,6 +719,10 @@
 		0130968861023AF2207E184C /* TerminalRender */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = TerminalRender;
+		};
+		33892EBDFF6FA3FEA57EB471 /* GhosttyEngine */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = GhosttyEngine;
 		};
 		38163878A4BC6D62D763B30D /* SSHCore */ = {
 			isa = XCSwiftPackageProductDependency;

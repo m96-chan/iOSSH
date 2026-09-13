@@ -3,6 +3,9 @@
 # SwiftTerm 1.20.0's pinned build plugin generates version metadata from its Git checkout.
 XCODEBUILD_FLAGS ?= -skipPackagePluginValidation
 DEVICE_DERIVED_DATA ?= build/DeviceDerivedData
+# Device builds default to Debug; pass CONFIGURATION=Release to measure or trial
+# what the optimiser produces, which is what the parser comparison in #10 needs.
+CONFIGURATION ?= Debug
 
 bootstrap:
 	@command -v xcodegen >/dev/null || { echo "Install XcodeGen: brew install xcodegen"; exit 1; }
@@ -23,12 +26,12 @@ test-ui:
 device-build:
 	@test -n "$(TEAM_ID)" || { echo "Set TEAM_ID to your Apple Developer team ID."; exit 1; }
 	# Recreate generated bundles so removed or updated fonts are reflected in the installed app.
-	rm -rf '$(DEVICE_DERIVED_DATA)/Build/Products/Debug-iphoneos/iOSSH.app' '$(DEVICE_DERIVED_DATA)/Build/Products/Debug-iphoneos/TerminalRender_TerminalRender.bundle'
-	xcodebuild -project iOSSH.xcodeproj -scheme iOSSH -configuration Debug -destination '$(if $(DEVICE_ID),id=$(DEVICE_ID),generic/platform=iOS)' -destination-timeout 30 -derivedDataPath '$(DEVICE_DERIVED_DATA)' $(XCODEBUILD_FLAGS) -allowProvisioningUpdates -allowProvisioningDeviceRegistration DEVELOPMENT_TEAM='$(TEAM_ID)' CODE_SIGN_STYLE=Automatic build
+	rm -rf '$(DEVICE_DERIVED_DATA)/Build/Products/$(CONFIGURATION)-iphoneos/iOSSH.app' '$(DEVICE_DERIVED_DATA)/Build/Products/$(CONFIGURATION)-iphoneos/TerminalRender_TerminalRender.bundle'
+	xcodebuild -project iOSSH.xcodeproj -scheme iOSSH -configuration $(CONFIGURATION) -destination '$(if $(DEVICE_ID),id=$(DEVICE_ID),generic/platform=iOS)' -destination-timeout 30 -derivedDataPath '$(DEVICE_DERIVED_DATA)' $(XCODEBUILD_FLAGS) -allowProvisioningUpdates -allowProvisioningDeviceRegistration DEVELOPMENT_TEAM='$(TEAM_ID)' CODE_SIGN_STYLE=Automatic build
 
 device-install:
 	@test -n "$(DEVICE_ID)" || { echo "Set DEVICE_ID using xcrun devicectl list devices."; exit 1; }
-	xcrun devicectl device install app --device '$(DEVICE_ID)' --timeout 60 '$(DEVICE_DERIVED_DATA)/Build/Products/Debug-iphoneos/iOSSH.app'
+	xcrun devicectl device install app --device '$(DEVICE_ID)' --timeout 60 '$(DEVICE_DERIVED_DATA)/Build/Products/$(CONFIGURATION)-iphoneos/iOSSH.app'
 
 device-run: device-install
 	xcrun devicectl device process launch --device '$(DEVICE_ID)' --timeout 30 io.github.m96-chan.iossh

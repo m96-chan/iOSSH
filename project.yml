@@ -17,6 +17,8 @@ packages:
     path: Packages/TerminalCore
   TerminalRender:
     path: Packages/TerminalRender
+  GhosttyEngine:
+    path: spike/GhosttyEngine
 targets:
   iOSSH:
     type: application
@@ -29,6 +31,7 @@ targets:
       - package: SSHCore
       - package: TerminalCore
       - package: TerminalRender
+      - package: GhosttyEngine
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.github.m96-chan.iossh

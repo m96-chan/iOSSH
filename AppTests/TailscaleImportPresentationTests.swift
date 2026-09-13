@@ -162,7 +162,7 @@ private struct ImportPresentationSurface: View {
 
 @MainActor
 private final class ImportPresentationTransport: ConnectionTransport {
-    var onData: (@MainActor (Data) -> Void)?
+    var onData: (@Sendable (Data) -> Void)?
     var onDisconnect: (@MainActor (String?) -> Void)?
     var onAuthenticationBanner: (@MainActor (String) -> Void)?
     private(set) var isConnected = false

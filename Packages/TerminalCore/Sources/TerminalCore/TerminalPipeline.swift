@@ -29,7 +29,12 @@ public final class TerminalPipeline: Sendable {
     /// several batches, so drawing while this is above zero shows a repaint in progress.
     private let unparsed: Counter
 
+    /// Builds the parser this pipeline drives. Supplying one selects a different engine;
+    /// the default is the SwiftTerm adapter the app ships with.
+    public typealias EngineFactory = @TerminalParserActor @Sendable (_ columns: Int, _ rows: Int, _ imageBudget: TerminalImageBudget?) -> any TerminalEngine
+
     public init(columns: Int = 80, rows: Int = 24, imageBudget: TerminalImageBudget? = nil,
+                makeEngine: EngineFactory? = nil,
                 onOutput: @escaping @Sendable (Data, UUID?) -> Void,
                 onNeedsDisplay: @escaping @Sendable () -> Void,
                 onImageCacheInvalidated: @escaping @Sendable () -> Void,
@@ -41,7 +46,8 @@ public final class TerminalPipeline: Sendable {
         let unparsed = Counter()
         self.unparsed = unparsed
         task = Task { @TerminalParserActor in
-            let engine = SwiftTermEngine(columns: columns, rows: rows, imageBudget: imageBudget)
+            let engine = makeEngine?(columns, rows, imageBudget)
+                ?? SwiftTermEngine(columns: columns, rows: rows, imageBudget: imageBudget)
             // A key or a paste produces its bytes synchronously inside the command that asked
             // for it, so the caller's token identifies what the person typed. Anything else the
             // parser writes is a reply to the shell and carries no token.

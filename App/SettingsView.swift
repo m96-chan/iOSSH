@@ -6,6 +6,7 @@ struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @AppStorage("terminal.fontSize") private var fontSize = Double(TerminalConfiguration.initialFontSize)
     @AppStorage("terminal.theme") private var theme = "dark"
+    @AppStorage("terminal.engine") private var engine = "swiftterm"
     @AppStorage(TerminalFontLibrary.selectionKey) private var fontName = TerminalFont.postScriptName
     @State private var fontLibrary = TerminalFontLibrary.shared
     @State private var importingFont = false
@@ -24,6 +25,13 @@ struct SettingsView: View {
                     // upright iPhone; whole points there jump straight past it to 78 columns.
                     Stepper("Font size: \(fontSize.formatted(.number.precision(.fractionLength(0...1)))) pt",
                             value: $fontSize, in: 8...32, step: 0.5)
+                    Picker("Parser", selection: $engine) {
+                        Text("SwiftTerm").tag("swiftterm")
+                        Text("libghostty-vt (trial)").tag("ghostty")
+                    }
+                    Text("The trial parser is about twelve times faster and has no history scrolling, selection copy, or images yet. Reopen a session to apply.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
                     Picker("Font", selection: $fontName) {
                         Text("\(TerminalFont.displayName) (Default)").tag(TerminalFont.postScriptName)
                         ForEach(fontLibrary.fonts) { font in

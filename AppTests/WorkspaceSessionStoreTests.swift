@@ -5,7 +5,7 @@ import SSHCore
 
 @MainActor
 private final class WorkspaceTransport: ConnectionTransport {
-    var onData: (@MainActor (Data) -> Void)?
+    var onData: (@Sendable (Data) -> Void)?
     var onDisconnect: (@MainActor (String?) -> Void)?
     var onAuthenticationBanner: (@MainActor (String) -> Void)?
     var isConnected = false

@@ -8,7 +8,9 @@ import NIOPosix
 /// credentials after disconnect; a reconnect always creates a new shell and revalidates the host key.
 @MainActor
 public final class SSHSession {
-    public var onData: (@MainActor (Data) -> Void)?
+    /// Called from the read loop, which does not run on the main actor. Hand the bytes to
+    /// something that owns its own isolation rather than touching main-actor state here.
+    public var onData: (@Sendable (Data) -> Void)?
     public var onDisconnect: (@MainActor (String?) -> Void)?
     /// Informational server text during authentication, including Tailscale check-mode links.
     /// Treat it as untrusted text; this callback never opens a URL or approves authentication.
@@ -151,15 +153,23 @@ public final class SSHSession {
             timeout.cancel()
             try ensureCurrent(attempt)
             isConnected = true
-            readTask = Task { [weak self] in
+            // Consuming the stream on the main actor made each batch wait for a turn on the
+            // thread that also parses and draws before the next read was requested, which held
+            // throughput to that thread's turnaround. Nothing in this loop needs the main actor:
+            // `read` hops to the channel's event loop on its own, and the sink is `Sendable`.
+            // `onData` is read here because callers set it before connecting.
+            let deliver = onData
+            readTask = Task.detached { [weak self] in
                 do {
                     // Request the first batch, then one more each time output reaches the terminal.
-                    // `read` is safe from this actor; it hops to the channel's event loop.
                     child.read()
                     for try await data in output {
-                        guard !Task.isCancelled, let self, self.generation == attempt else { return }
-                        self.onData?(data)
+                        guard !Task.isCancelled, lifetime.isActive else { return }
+                        // Ask for the next batch before handing this one over. The credit count
+                        // is unchanged, so the server still stops when the terminal falls behind,
+                        // but the network no longer waits for the batch in hand to be drawn.
                         child.read()
+                        deliver?(data)
                     }
                     await self?.ended(attempt: attempt, error: nil)
                 } catch {
