@@ -162,6 +162,8 @@ public final class SSHSession {
             readTask = Task.detached { [weak self] in
                 do {
                     // Request the first batch, then one more each time output reaches the terminal.
+                    // Eight in flight was measured here and delivered the same bytes per second as
+                    // one, so the round trip is not what bounds throughput.
                     child.read()
                     for try await data in output {
                         guard !Task.isCancelled, lifetime.isActive else { return }

@@ -54,6 +54,35 @@ extension SSHSession: ConnectionTransport {}
     }
 }
 
+/// Temporary instrumentation for the frame-rate work. Records where SSH output arrives, which
+/// is off the main actor, so it takes a lock. Remove once the question is settled.
+private let inputLog = ByteLog()
+
+private final class ByteLog: @unchecked Sendable {
+    private let lock = NSLock()
+    private var bytes = 0
+    private var chunks = 0
+    private var window = ContinuousClock.now
+
+    func record(_ count: Int) {
+        lock.lock()
+        bytes += count
+        chunks += 1
+        let now = ContinuousClock.now
+        let elapsed = Double(window.duration(to: now).components.seconds) * 1000
+            + Double(window.duration(to: now).components.attoseconds) / 1e15
+        guard elapsed >= 1000 else { lock.unlock(); return }
+        let line = String(format: "INPUT %.0f KB/s chunks=%.0f/s mean=%d bytes",
+                          Double(bytes) / elapsed, Double(chunks) * 1000 / elapsed,
+                          bytes / max(chunks, 1))
+        bytes = 0
+        chunks = 0
+        window = now
+        lock.unlock()
+        print(line)
+    }
+}
+
 /// Open until the attempt that installed it is replaced or closed.
 private final class OutputGate: @unchecked Sendable {
     private let lock = NSLock()
@@ -154,6 +183,8 @@ final class ConnectionModel: Identifiable {
     /// Shuts off a superseded session's output. Read from the SSH read loop, which no
     /// longer runs on the main actor, so it cannot consult `attempt` directly.
     @ObservationIgnored private var outputGate: OutputGate?
+    /// When the last snapshot reached the view, so the next is paced against it.
+    @ObservationIgnored fileprivate var published: ContinuousClock.Instant?
     /// Temporary, for the frame-rate work: prints to the device console once a second.
     @ObservationIgnored fileprivate static var frames = FrameLog()
 
@@ -246,6 +277,7 @@ final class ConnectionModel: Identifiable {
             outputGate = gate
             transport.onData = { [pipeline = terminal] data in
                 guard gate.isOpen else { return }
+                inputLog.record(data.count)
                 pipeline.feed(data)
             }
             transport.onDisconnect = { [weak self] reason in
@@ -684,7 +716,17 @@ final class ConnectionModel: Identifiable {
         guard isVisible, !isInBackground, snapshotTask == nil else { return }
         let started = ContinuousClock.now
         snapshotTask = Task { [weak self] in
-            let deadline = started.advanced(by: Self.maximumSnapshotDelay)
+            // The screen can show about 60 snapshots a second and the parser finishes work far
+            // more often than that. Publishing every time does not put more on the screen: the
+            // extra ones pay for update(_:) and are replaced before they are drawn, and the
+            // damage they carried is dropped rather than accumulated, which leaves the renderer
+            // redrawing more than it should. Hold publication to one display frame.
+            if let previous = await self?.published {
+                let due = previous.advanced(by: Self.presentationInterval)
+                if ContinuousClock.now < due { try? await Task.sleep(until: due, clock: .continuous) }
+                guard !Task.isCancelled else { return }
+            }
+            let deadline = ContinuousClock.now.advanced(by: Self.maximumSnapshotDelay)
             while true {
                 guard !Task.isCancelled, let self, self.isVisible, !self.isInBackground else { return }
                 if let value = await self.terminal.snapshotIfDrained() {
@@ -702,11 +744,14 @@ final class ConnectionModel: Identifiable {
                 // frame the interval whether or not there was anything to wait for.
                 try? await Task.sleep(for: Self.snapshotInterval)
             }
+            self?.published = ContinuousClock.now
             ConnectionModel.frames.record(start: started)
             self?.snapshotTask = nil
         }
     }
 
+    /// One frame on this panel.
+    private static let presentationInterval = Duration.milliseconds(16)
     private static let snapshotInterval = Duration.milliseconds(8)
     /// Output that never pauses never drains, so this deadline decides the frame rate while a
     /// program is writing continuously. One display frame keeps that at 60fps; longer values
