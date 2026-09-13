@@ -107,8 +107,12 @@ struct TerminalScreen: View {
                 // Keep the rectangular character grid inside the rounded surface.
                 .padding(6)
                 .background(color(theme.background))
+                // The surface ends level with the sidebar's Settings row, at the bottom of
+                // the safe area, rather than leaving a strip of window background above it
+                // or running under the home indicator.
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .padding(6)
+                .padding(.horizontal, 6)
+                .padding(.top, 6)
         } else {
             terminal.overlay(alignment: .top) {
                 VStack(spacing: 8) {
