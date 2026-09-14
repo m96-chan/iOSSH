@@ -19,8 +19,23 @@ final class KeyboardResizeUITests: XCTestCase {
         app.buttons["saveHost"].tap()
         app.buttons["host-Keyboard resize"].tap()
         XCTAssertTrue(app.secureTextFields["Password"].waitForExistence(timeout: 10))
-        app.buttons["Cancel"].tap()
-        XCTAssertTrue(app.buttons["Reconnect"].waitForExistence(timeout: 5))
+        // `waitForExistence` returns while the sheet is still animating in, and on an iPad the
+        // credential prompt is a form sheet that travels further and settles later than the
+        // iPhone's. A tap delivered mid-animation is dropped: the sheet stays up, the connection
+        // stays in `.connecting`, and the button waited for below — which `TerminalScreen` only
+        // draws once the phase leaves `.connecting` — never appears at all (#35). The same
+        // settling wait guards every other button this test taps.
+        let cancel = app.buttons["Cancel"]
+        try await waitUntil("The credential sheet's Cancel must settle before it is tapped") { cancel.isHittable }
+        cancel.tap()
+        // Through `waitUntil` rather than `waitForExistence` so a failure here keeps a
+        // screenshot. Cancelling resumes the credential continuation with nil and the connection
+        // reports `.disconnected`, so the button is the visible end of that path; a screenshot is
+        // what would say whether a future failure is the sheet still being up or the phase not
+        // having moved.
+        try await waitUntil("Cancelling the credential prompt must offer Reconnect") {
+            app.buttons["Reconnect"].exists
+        }
         let terminal = app.descendants(matching: .any).matching(identifier: "terminal").firstMatch
         let control = app.buttons["terminalAccessoryControl"]
         var expandedHeight: CGFloat?
@@ -111,7 +126,10 @@ final class KeyboardResizeUITests: XCTestCase {
     }
 
     @MainActor private func waitUntil(_ message: @autoclosure () -> String, condition: () -> Bool) async throws {
-        let deadline = ContinuousClock.now.advanced(by: .seconds(5))
+        // Twenty seconds, not five. This is how long the test waits before giving up, not a
+        // claim about how fast anything has to be, and five is short on a runner that has been
+        // building for half an hour and is on its second simulator.
+        let deadline = ContinuousClock.now.advanced(by: .seconds(20))
         while !condition() {
             if ContinuousClock.now >= deadline {
                 let screenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
