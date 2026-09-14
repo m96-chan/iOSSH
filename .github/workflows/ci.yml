@@ -23,6 +23,20 @@ jobs:
         run: make test
       - name: Install Metal compiler component
         run: xcodebuild -downloadComponent MetalToolchain
+      - name: Restore libghostty-vt
+        id: ghostty
+        uses: actions/cache@v4
+        with:
+          path: build/vendor/ghostty-vt.xcframework
+          key: ghostty-vt-${{ hashFiles('scripts/build_ghostty_vt.sh') }}
+      # The app links the #10 trial engine, whose xcframework is not in the repository. The
+      # cache key is the build script, which carries the pinned commit, so this runs again only
+      # when the pin moves.
+      - name: Build libghostty-vt
+        if: steps.ghostty.outputs.cache-hit != 'true'
+        run: |
+          brew install zig
+          scripts/build_ghostty_vt.sh
       - name: Build iPhone and iPad app
         run: make build
       - name: Test app lifecycle and UI

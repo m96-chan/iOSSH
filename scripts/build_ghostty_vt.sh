@@ -8,7 +8,8 @@
 # Requires Zig (tested with 0.16.0): brew install zig
 set -euo pipefail
 
-GHOSTTY_REF="${GHOSTTY_REF:-main}"
+# Pinned. Moving this is a deliberate act: the C API is documented as unstable.
+GHOSTTY_REF="${GHOSTTY_REF:-0c2a290d3a3e2a599be3a43435d778a5896667ee}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WORK="${ROOT}/build/ghostty-src"
 OUT="${ROOT}/build/ghostty-out"
@@ -16,8 +17,13 @@ OUT="${ROOT}/build/ghostty-out"
 command -v zig >/dev/null || { echo "Install Zig: brew install zig"; exit 1; }
 
 if [ ! -d "${WORK}/.git" ]; then
-    git clone --depth 1 --branch "${GHOSTTY_REF}" https://github.com/ghostty-org/ghostty.git "${WORK}"
+    git init -q "${WORK}"
+    git -C "${WORK}" remote add origin https://github.com/ghostty-org/ghostty.git
 fi
+# Fetching the commit rather than cloning a branch, so a pinned SHA works the same way a
+# branch name does and the checkout stays shallow either way.
+git -C "${WORK}" fetch -q --depth 1 origin "${GHOSTTY_REF}"
+git -C "${WORK}" checkout -q FETCH_HEAD
 
 cd "${WORK}"
 zig build -Demit-lib-vt=true -Doptimize=ReleaseFast --prefix "${OUT}"
