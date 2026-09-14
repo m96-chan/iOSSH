@@ -148,23 +148,22 @@ jobs:
         family: [iPhone, iPad]
     steps:
       - uses: actions/checkout@v7
-      # Preparing a simulator is mostly waiting for it to boot, so it starts before the download
-      # rather than after it. An iPad left with a hardware keyboard attached, or with AutoFill
-      # on, fails the keyboard test and adds a 60s wait to every later interaction.
-      - name: Start preparing the ${{ matrix.family }} simulator
-        run: |
-          scripts/prepare_simulator.sh '${{ matrix.family }}' > simulator-udid.txt &
-          echo $! > simulator-prepare.pid
       - name: Download the built test bundles
         uses: actions/download-artifact@v7
         with:
           name: test-bundles
           path: build/DerivedData/Build/Products
-      - name: Wait for the simulator
+      # Synchronously, in its own step. Backgrounding this to overlap it with the download above
+      # cannot work: each `run:` is a separate process, so the later step's `wait` is handed a
+      # pid that is not its child. The overlap was worth a minute or two and is not worth
+      # carrying a process across steps for.
+      #
+      # An iPad left with a hardware keyboard attached, or with AutoFill on, fails the keyboard
+      # test and adds a 60s wait to every later interaction, which is what this sets.
+      - name: Prepare the ${{ matrix.family }} simulator
         id: simulator
         run: |
-          wait "$(cat simulator-prepare.pid)"
-          udid=$(cat simulator-udid.txt)
+          udid=$(scripts/prepare_simulator.sh '${{ matrix.family }}')
           test -n "$udid"
           echo "udid=$udid" >> "$GITHUB_OUTPUT"
       - name: Test app lifecycle and UI on the ${{ matrix.family }}
