@@ -40,7 +40,7 @@ Tailscaleは任意の機能です。通常のSSHはTailscaleなしで確認で�
 - ストア名の空き状況、主言語、価格、配信国を確定する。
 - 実際の問い合わせ先を含めて[プライバシーポリシー案](PRIVACY.jp.md)と[サポートページ案](SUPPORT.jp.md)を確定・公開する。App Store ConnectへのURL登録とともに、アプリ内からも開けるリンクを設ける。
 - 配布する実装に基づき、App Privacy、年齢区分、暗号化・輸出コンプライアンスの回答を確定する。SSHは依存ライブラリを通じて暗号処理を使うため、`ITSAppUsesNonExemptEncryption` を推測で自動設定していない。
-- **Settings → Open source licenses**で同梱ソフトウェアの表記と、別に用意したフォントのライセンスを確認する。
+- **Settings → Open source licenses**で同梱ソフトウェアの表記と、別に用意したフォントのライセンスを確認する。ソフトウェアの表記は生成物であり、`scripts/generate_third_party_notices.py --check` が、アプリが実際にリンクしている依存関係との食い違いを検出して失敗する。`Package.resolved` に現れないまま全ビルドに含まれる libghostty-vt もこの対象に含めている。
 - 最終ビルドのiPhone・iPadで、私用サーバーの情報を含めず、テスト用接続先によるストア向けスクリーンショットを撮影する。[開発ノート](DEVELOPMENT.jp.md)の実機確認を完了する。
 - 審査担当者向けの連絡先と、動作するSSH接続情報を用意する。
 

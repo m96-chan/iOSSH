@@ -70,7 +70,10 @@ before registration.
   based on the shipped app. SSH uses cryptography through its dependencies;
   `ITSAppUsesNonExemptEncryption` has not been guessed or set automatically.
 - Verify the shipped software notices under **Settings → Open source licenses**
-  and the separate bundled font licenses.
+  and the separate bundled font licenses. The software notices are generated;
+  `scripts/generate_third_party_notices.py --check` fails when they drift from
+  what the app links, including libghostty-vt, which ships in every build but
+  has no `Package.resolved` pin to be discovered from.
 - Capture store screenshots from the final iPhone and iPad build with test hosts
   and no private server information. Complete the physical-device checks listed
   in [development notes](DEVELOPMENT.md).
