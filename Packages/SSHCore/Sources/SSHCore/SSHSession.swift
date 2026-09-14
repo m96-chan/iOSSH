@@ -8,7 +8,12 @@ import NIOPosix
 /// credentials after disconnect; a reconnect always creates a new shell and revalidates the host key.
 @MainActor
 public final class SSHSession {
-    public var onData: (@MainActor (Data) -> Void)?
+    /// Called from the read loop, which does not run on the main actor. Hand the bytes to
+    /// something that owns its own isolation rather than touching main-actor state here.
+    public var onData: (@Sendable (Data) -> Void)?
+    /// Asked before each read credit is renewed. Returning false holds the credit back, which
+    /// closes the SSH window and makes the server wait rather than queueing output here.
+    public var isReadyForMore: (@Sendable () -> Bool)?
     public var onDisconnect: (@MainActor (String?) -> Void)?
     /// Informational server text during authentication, including Tailscale check-mode links.
     /// Treat it as untrusted text; this callback never opens a URL or approves authentication.
@@ -91,8 +96,16 @@ public final class SSHSession {
                     // Citadel supplies the authentication delegate and key parsing. Installing the
                     // transport here avoids its fixed ten-second timeout during the host trust UI.
                     do {
+                        // NIOSSH gives a child channel a receive window equal to this, and tops it
+                        // up only once half of it has been consumed, so the shell can have about
+                        // half this much in flight at a time. At the 128KB default that put a
+                        // ceiling of roughly 8MB/s on output here — window over round trip — no
+                        // matter how fast the terminal read, parsed or drew it. OpenSSH uses 2MB.
+                        var configuration = SSHClientConfiguration(userAuthDelegate: authentication(),
+                                                                   serverAuthDelegate: validator)
+                        configuration.maximumPacketSize = 1 << 21
                         try channel.pipeline.syncOperations.addHandlers(
-                            NIOSSHHandler(role: .client(.init(userAuthDelegate: authentication(), serverAuthDelegate: validator)),
+                            NIOSSHHandler(role: .client(configuration),
                                           allocator: channel.allocator,
                                           inboundChildChannelInitializer: { child, _ in
                                               child.eventLoop.makeFailedFuture(SSHSessionError.requestRejected)
@@ -151,14 +164,34 @@ public final class SSHSession {
             timeout.cancel()
             try ensureCurrent(attempt)
             isConnected = true
-            readTask = Task { [weak self] in
+            // Consuming the stream on the main actor made each batch wait for a turn on the
+            // thread that also parses and draws before the next read was requested, which held
+            // throughput to that thread's turnaround. Nothing in this loop needs the main actor:
+            // `read` hops to the channel's event loop on its own, and the sink is `Sendable`.
+            // `onData` is read here because callers set it before connecting.
+            let deliver = onData
+            let hasCapacity = isReadyForMore
+            readTask = Task.detached { [weak self] in
                 do {
                     // Request the first batch, then one more each time output reaches the terminal.
-                    // `read` is safe from this actor; it hops to the channel's event loop.
+                    // Eight in flight was measured here and delivered the same bytes per second as
+                    // one, so the round trip is not what bounds throughput.
                     child.read()
                     for try await data in output {
-                        guard !Task.isCancelled, let self, self.generation == attempt else { return }
-                        self.onData?(data)
+                        guard !Task.isCancelled, lifetime.isActive else { return }
+                        // Ask for the next batch before handing this one over. The credit count
+                        // is unchanged, so the server still stops when the terminal falls behind,
+                        // but the network no longer waits for the batch in hand to be drawn.
+                        deliver?(data)
+                        // Renewing unconditionally let the shell run as far ahead as the window
+                        // allowed, which after 433b132 is 2MB rather than 64KB. Measured against
+                        // a shell writing continuously, the shipping parser fell behind by over
+                        // two thousand batches and kept falling. Hold the credit until the
+                        // terminal has caught up; the window closes and the server waits.
+                        while let hasCapacity, !hasCapacity() {
+                            if Task.isCancelled || !lifetime.isActive { return }
+                            try await Task.sleep(for: .milliseconds(2))
+                        }
                         child.read()
                     }
                     await self?.ended(attempt: attempt, error: nil)

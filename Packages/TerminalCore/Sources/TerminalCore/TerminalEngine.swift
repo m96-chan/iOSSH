@@ -65,16 +65,31 @@ public struct TerminalImagePlacement: Sendable, Equatable {
     public let widthFraction, heightFraction: Double
     /// Straight (unpremultiplied) sRGB RGBA8, tightly packed, top row first.
     public let rgba: Data
+    /// Changes when `rgba` does, so equality can skip the pixels. Comparing the payload meant
+    /// every snapshot walked every image byte for byte while one was on screen, and the
+    /// equal case — the common one — is the one that has to read all of it.
+    public let contentRevision: UInt64
     public init(id: UInt32, placementID: UInt32, column: Int, row: Int, columns: Int, rows: Int,
                 offsetX: Int = 0, offsetY: Int = 0, zIndex: Int = 0,
-                pixelWidth: Int, pixelHeight: Int, rgba: Data,
+                pixelWidth: Int, pixelHeight: Int, rgba: Data, contentRevision: UInt64 = 0,
                 sourceX: Double = 0, sourceY: Double = 0, sourceWidth: Double = 1, sourceHeight: Double = 1,
                 widthFraction: Double = 1, heightFraction: Double = 1) {
         self.id = id; self.placementID = placementID; self.column = column; self.row = row
         self.columns = columns; self.rows = rows; self.offsetX = offsetX; self.offsetY = offsetY; self.zIndex = zIndex
         self.pixelWidth = pixelWidth; self.pixelHeight = pixelHeight; self.rgba = rgba
+        self.contentRevision = contentRevision
         self.sourceX = sourceX; self.sourceY = sourceY; self.sourceWidth = sourceWidth; self.sourceHeight = sourceHeight
         self.widthFraction = widthFraction; self.heightFraction = heightFraction
+    }
+
+    public static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.id == rhs.id && lhs.placementID == rhs.placementID && lhs.contentRevision == rhs.contentRevision
+            && lhs.column == rhs.column && lhs.row == rhs.row && lhs.columns == rhs.columns && lhs.rows == rhs.rows
+            && lhs.offsetX == rhs.offsetX && lhs.offsetY == rhs.offsetY && lhs.zIndex == rhs.zIndex
+            && lhs.pixelWidth == rhs.pixelWidth && lhs.pixelHeight == rhs.pixelHeight
+            && lhs.sourceX == rhs.sourceX && lhs.sourceY == rhs.sourceY
+            && lhs.sourceWidth == rhs.sourceWidth && lhs.sourceHeight == rhs.sourceHeight
+            && lhs.widthFraction == rhs.widthFraction && lhs.heightFraction == rhs.heightFraction
     }
 }
 

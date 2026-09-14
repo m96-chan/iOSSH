@@ -19,10 +19,37 @@ public enum TerminalWorkspaceCommand: Equatable, Sendable {
     case newSession, closeSession, previousSession, nextSession, selectSession(Int), settings
 }
 
+/// Carries snapshots to the view without going through SwiftUI.
+///
+/// A snapshot published as observable state re-evaluates the screen's body, rebuilds the
+/// representable and runs its update path — for every frame, to deliver a value only the
+/// Metal view reads. Holding the surface itself is enough: the reference never changes, so
+/// the body does not re-run, and the view is handed each snapshot directly.
+@MainActor
+public final class TerminalSurface {
+    private weak var view: TerminalMetalView?
+    private var latest: TerminalSnapshot?
+
+    public init() {}
+
+    public func publish(_ snapshot: TerminalSnapshot?) {
+        latest = snapshot
+        view?.update(snapshot)
+    }
+
+    /// Called as the representable makes or updates its view; the last snapshot is replayed so
+    /// a view created after one was published still has something to draw.
+    func attach(_ view: TerminalMetalView) {
+        guard self.view !== view else { return }
+        self.view = view
+        view.update(latest)
+    }
+}
+
 /// A terminal surface driven by immutable engine snapshots. All callbacks run on MainActor.
 @MainActor
 public struct TerminalView: UIViewRepresentable {
-    public var snapshot: TerminalSnapshot?
+    public var surface: TerminalSurface
     public var configuration: TerminalConfiguration
     public var onInput: @MainActor (Data) -> Void
     public var onResize: @MainActor (Int, Int) -> Void
@@ -35,7 +62,7 @@ public struct TerminalView: UIViewRepresentable {
     public var focusRequest: UUID?
     public var onWorkspaceCommand: (@MainActor (TerminalWorkspaceCommand) -> Void)?
 
-    public init(snapshot: TerminalSnapshot?, configuration: TerminalConfiguration = .init(),
+    public init(surface: TerminalSurface, configuration: TerminalConfiguration = .init(),
                 onInput: @escaping @MainActor (Data) -> Void,
                 onResize: @escaping @MainActor (Int, Int) -> Void,
                 onKey: (@MainActor (TerminalKey) -> Void)? = nil,
@@ -46,7 +73,7 @@ public struct TerminalView: UIViewRepresentable {
                 inputIdentity: TerminalInputIdentity? = nil,
                 focusRequest: UUID? = nil,
                 onWorkspaceCommand: (@MainActor (TerminalWorkspaceCommand) -> Void)? = nil) {
-        self.snapshot = snapshot
+        self.surface = surface
         self.configuration = configuration
         self.onInput = onInput
         self.onResize = onResize
@@ -81,7 +108,7 @@ public struct TerminalView: UIViewRepresentable {
         view.onCopySelection = onCopySelection
         view.onWorkspaceCommand = onWorkspaceCommand
         view.configure(configuration)
-        view.update(snapshot)
+        surface.attach(view)
         view.requestFocus(focusRequest)
     }
 }

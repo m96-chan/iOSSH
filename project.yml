@@ -17,6 +17,8 @@ packages:
     path: Packages/TerminalCore
   TerminalRender:
     path: Packages/TerminalRender
+  GhosttyEngine:
+    path: spike/GhosttyEngine
 targets:
   iOSSH:
     type: application
@@ -29,10 +31,16 @@ targets:
       - package: SSHCore
       - package: TerminalCore
       - package: TerminalRender
+      - package: GhosttyEngine
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.github.m96-chan.iossh
         PRODUCT_NAME: iOSSH
+        # The #10 trial engine's xcframework carries an arm64 simulator slice and no x86_64 one,
+        # and a generic simulator destination builds the standard architectures, which includes
+        # x86_64. Nothing that runs this is an Intel Mac; asking for that slice only fails the
+        # link. Drop it rather than building a second copy of the library for nobody.
+        EXCLUDED_ARCHS[sdk=iphonesimulator*]: x86_64
         MARKETING_VERSION: 0.1.0
         CURRENT_PROJECT_VERSION: 13
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon

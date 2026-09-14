@@ -87,7 +87,7 @@ struct TerminalScreen: View {
 
     @ViewBuilder private var surface: some View {
         let inputAttempt = model.connectionAttemptID
-        let terminal = TerminalView(snapshot: model.snapshot,
+        let terminal = TerminalView(surface: model.surface,
                          configuration: TerminalConfiguration(fontSize: fontSize,
                             fontName: TerminalFontLibrary.shared.resolvedFontName(selectedFontName), theme: theme),
                          onInput: { model.sendUserInput($0, attemptID: inputAttempt) },

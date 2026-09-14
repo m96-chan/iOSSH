@@ -26,7 +26,10 @@ struct KittyGraphicsContext {
     private struct Image {
         let data: Data
         let width, height: Int
+        /// Bumped on use, for eviction order.
         var tick: UInt64
+        /// Fixed at transmission, so a placement's identity changes only when its pixels do.
+        let revision: UInt64
     }
     private struct Placement {
         let imageID, placementID: UInt32
@@ -144,7 +147,7 @@ struct KittyGraphicsContext {
             respond(transfer.control, "E2BIG: shared image cache limit", output); return
         }
         tick &+= 1
-        images[id] = Image(data: image.data, width: image.width, height: image.height, tick: tick)
+        images[id] = Image(data: image.data, width: image.width, height: image.height, tick: tick, revision: tick)
         totalBytes += image.data.count
         if let number = uint(transfer.control, "I"), number != 0 { imageNumbers[number] = id }
         var placementControl = transfer.control
@@ -159,12 +162,12 @@ struct KittyGraphicsContext {
         guard format == 24 || format == 32 else { return nil }
         let width = integer(control, "s"), height = integer(control, "v")
         guard dimensionsAllowed(width, height), data.count == width * height * (format / 8) else { return nil }
-        if format == 32 { return Image(data: data, width: width, height: height, tick: 0) }
+        if format == 32 { return Image(data: data, width: width, height: height, tick: 0, revision: 0) }
         var rgba = Data(); rgba.reserveCapacity(width * height * 4)
         data.withUnsafeBytes { (bytes: UnsafeRawBufferPointer) in
             for index in stride(from: 0, to: bytes.count, by: 3) { rgba.append(bytes[index]); rgba.append(bytes[index + 1]); rgba.append(bytes[index + 2]); rgba.append(255) }
         }
-        return Image(data: rgba, width: width, height: height, tick: 0)
+        return Image(data: rgba, width: width, height: height, tick: 0, revision: 0)
     }
 
     private func dimensionsAllowed(_ width: Int, _ height: Int) -> Bool {
@@ -198,7 +201,7 @@ struct KittyGraphicsContext {
             }
             return true
         }
-        return succeeded ? Image(data: rgba, width: width, height: height, tick: 0) : nil
+        return succeeded ? Image(data: rgba, width: width, height: height, tick: 0, revision: 0) : nil
     }
 
     private func place(_ control: [String: String], context: KittyGraphicsContext,
@@ -252,6 +255,7 @@ struct KittyGraphicsContext {
                                           column: placement.column, row: row, columns: placement.columns, rows: placement.rows,
                                           offsetX: placement.offsetX, offsetY: placement.offsetY, zIndex: placement.zIndex,
                                           pixelWidth: image.width, pixelHeight: image.height, rgba: image.data,
+                                          contentRevision: image.revision,
                                           sourceY: placement.sourceY, sourceHeight: placement.sourceHeight)
         }
         for cell in placeholders {
@@ -267,6 +271,7 @@ struct KittyGraphicsContext {
             result.append(TerminalImagePlacement(id: cell.imageID, placementID: prototype.placementID,
                                                  column: cell.column, row: cell.row, columns: 1, rows: 1,
                                                  zIndex: prototype.zIndex, pixelWidth: image.width, pixelHeight: image.height, rgba: image.data,
+                                                 contentRevision: image.revision,
                                                  sourceX: left / displayedWidth, sourceY: top / displayedHeight,
                                                  sourceWidth: width / displayedWidth, sourceHeight: height / displayedHeight,
                                                  widthFraction: width / Double(context.cellWidth), heightFraction: height / Double(context.cellHeight)))

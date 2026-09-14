@@ -1,12 +1,14 @@
 import Foundation
 import Observation
 import SSHCore
+import GhosttyEngine
 import TerminalCore
 import TerminalRender
 
 @MainActor
 protocol ConnectionTransport: AnyObject {
-    var onData: (@MainActor (Data) -> Void)? { get set }
+    var onData: (@Sendable (Data) -> Void)? { get set }
+    var isReadyForMore: (@Sendable () -> Bool)? { get set }
     var onDisconnect: (@MainActor (String?) -> Void)? { get set }
     var onAuthenticationBanner: (@MainActor (String) -> Void)? { get set }
     var isConnected: Bool { get }
@@ -20,6 +22,15 @@ protocol ConnectionTransport: AnyObject {
 }
 
 extension SSHSession: ConnectionTransport {}
+
+/// Open until the attempt that installed it is replaced or closed.
+private final class OutputGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var open = true
+
+    var isOpen: Bool { lock.withLock { open } }
+    func close() { lock.withLock { open = false } }
+}
 
 /// Lets the parser's callbacks reach the model without the model escaping its own init.
 @MainActor private final class WeakModel: Sendable {
@@ -71,7 +82,13 @@ final class ConnectionModel: Identifiable {
     private var cellPixelWidth = 0
     private var cellPixelHeight = 0
     private(set) var phase: Phase = .idle
-    private(set) var snapshot: TerminalSnapshot?
+    /// Deliberately not observable: it reaches the view through `surface`, so publishing a
+    /// frame does not re-evaluate the screen's body. Kept for the code here that reads it.
+    @ObservationIgnored private(set) var snapshot: TerminalSnapshot? {
+        didSet { surface.publish(snapshot) }
+    }
+    /// The channel the Metal view reads snapshots from.
+    @ObservationIgnored let surface = TerminalSurface()
     private(set) var message: String?
     private(set) var authenticationBanner = ""
     private(set) var authenticationURL: URL?
@@ -103,12 +120,28 @@ final class ConnectionModel: Identifiable {
     @ObservationIgnored private var foregroundCheckID = UUID()
     @ObservationIgnored private var isInBackground = false
     @ObservationIgnored private var needsConnectionCheck = false
+    /// Shuts off a superseded session's output. Read from the SSH read loop, which no
+    /// longer runs on the main actor, so it cannot consult `attempt` directly.
+    @ObservationIgnored private var outputGate: OutputGate?
+    /// When the last snapshot reached the view, so the next is paced against it.
+    @ObservationIgnored fileprivate var published: ContinuousClock.Instant?
+
+    /// Trial for #10: the libghostty-vt parser, chosen in Settings. Measured in release it
+    /// parses about fourteen times faster than the shipping engine, which turned out not to
+    /// reach the screen — output is bounded by the SSH window, not by parsing. What it does
+    /// change is what gets drawn: repaints arrive without the flashes the current engine
+    /// leaves behind. It stays off by default until the trial says otherwise.
+    static var experimentalEngineFactory: TerminalPipeline.EngineFactory? {
+        guard UserDefaults.standard.string(forKey: "terminal.engine") == "ghostty" else { return nil }
+        return { columns, rows, _ in GhosttyEngine(columns: columns, rows: rows) }
+    }
 
     init(host: SSHHost, dependencies: Dependencies = .live, imageBudget: TerminalImageBudget? = nil) {
         self.host = host
         self.dependencies = dependencies
         let box = WeakModel()
         terminal = TerminalPipeline(columns: 80, rows: 24, imageBudget: imageBudget,
+                                    makeEngine: ConnectionModel.experimentalEngineFactory,
                                     onOutput: { data, origin in
             Task { @MainActor in box.model?.parserDidWrite(data, origin: origin) }
         }, onNeedsDisplay: {
@@ -176,10 +209,19 @@ final class ConnectionModel: Identifiable {
                     if !self.isVisible { self.isAuthenticationDeferred = true }
                 }
             }
-            transport.onData = { [weak self] data in
-                guard let self, self.attempt == token else { return }
-                self.terminal.feed(data)
+            // Output arrives off the main actor now, so the check that used to compare `attempt`
+            // has to be readable from there. `prepareClose` shuts the gate synchronously, which
+            // keeps bytes from a superseded session out of the grid its replacement is drawing.
+            outputGate?.close()
+            let gate = OutputGate()
+            outputGate = gate
+            transport.onData = { [pipeline = terminal] data in
+                guard gate.isOpen else { return }
+                pipeline.feed(data)
             }
+            // Enough to keep the parser fed across a repaint without letting a shell that
+            // outruns it queue megabytes of unparsed output on the device.
+            transport.isReadyForMore = { [pipeline = terminal] in pipeline.backlog < 64 }
             transport.onDisconnect = { [weak self] reason in
                 guard let self, self.attempt == token else { return }
                 self.cancelForegroundCheck()
@@ -251,6 +293,8 @@ final class ConnectionModel: Identifiable {
 
     private func prepareClose(message: String?) -> (any ConnectionTransport)? {
         attempt = UUID()
+        outputGate?.close()
+        outputGate = nil
         initialConnectionTask?.cancel()
         initialConnectionTask = nil
         cancelForegroundCheck()
@@ -610,29 +654,61 @@ final class ConnectionModel: Identifiable {
     /// Draw only what the parser has finished, which for a program that pauses between frames
     /// means whole frames. A stream that never pauses would otherwise never draw, so the
     /// deadline gives up waiting and draws whatever is there.
+    /// A shell sending an image writes megabytes without touching a cell, and the parser asks
+    /// for a repaint on every batch of it. Publishing a grid identical to the one on screen
+    /// costs the view an update and the renderer a frame to show the same picture, so the
+    /// unchanged ones stop here.
+    private func publish(_ value: TerminalSnapshot) {
+        if let previous = snapshot, value.damageRows.isEmpty,
+           value.columns == previous.columns, value.rows == previous.rows,
+           value.cursor == previous.cursor, value.images == previous.images,
+           value.scrollbackOffset == previous.scrollbackOffset {
+            return
+        }
+        snapshot = value
+    }
+
     private func scheduleSnapshot() {
         guard isVisible, !isInBackground, snapshotTask == nil else { return }
         snapshotTask = Task { [weak self] in
+            // The screen can show about 60 snapshots a second and the parser finishes work far
+            // more often than that. Publishing every time does not put more on the screen: the
+            // extra ones pay for update(_:) and are replaced before they are drawn, and the
+            // damage they carried is dropped rather than accumulated, which leaves the renderer
+            // redrawing more than it should. Hold publication to one display frame.
+            if let previous = self?.published {
+                let due = previous.advanced(by: Self.presentationInterval)
+                if ContinuousClock.now < due { try? await Task.sleep(until: due, clock: .continuous) }
+                guard !Task.isCancelled else { return }
+            }
             let deadline = ContinuousClock.now.advanced(by: Self.maximumSnapshotDelay)
             while true {
-                try? await Task.sleep(for: Self.snapshotInterval)
                 guard !Task.isCancelled, let self, self.isVisible, !self.isInBackground else { return }
                 if let value = await self.terminal.snapshotIfDrained() {
                     guard !Task.isCancelled, self.isVisible, !self.isInBackground else { return }
-                    self.snapshot = value
+                    self.publish(value)
                     break
                 }
                 guard ContinuousClock.now < deadline else {
                     let value = await self.terminal.snapshot()
                     guard !Task.isCancelled, self.isVisible, !self.isInBackground else { return }
-                    self.snapshot = value
+                    self.publish(value)
                     break
                 }
+                // Only wait once the parser is known to be behind. Sleeping first cost every
+                // frame the interval whether or not there was anything to wait for.
+                try? await Task.sleep(for: Self.snapshotInterval)
             }
+            self?.published = ContinuousClock.now
             self?.snapshotTask = nil
         }
     }
 
+    /// One frame on this panel.
+    private static let presentationInterval = Duration.milliseconds(16)
     private static let snapshotInterval = Duration.milliseconds(8)
-    private static let maximumSnapshotDelay = Duration.milliseconds(120)
+    /// Output that never pauses never drains, so this deadline decides the frame rate while a
+    /// program is writing continuously. One display frame keeps that at 60fps; longer values
+    /// hide the parser's speed entirely behind the wait.
+    private static let maximumSnapshotDelay = Duration.milliseconds(16)
 }

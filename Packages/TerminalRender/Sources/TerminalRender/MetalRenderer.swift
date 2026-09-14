@@ -363,3 +363,4 @@ private extension UInt32 {
         TerminalColor(red: UInt8((self >> 16) & 255), green: UInt8((self >> 8) & 255), blue: UInt8(self & 255))
     }
 }
+

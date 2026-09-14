@@ -7,3 +7,8 @@ build/
 xcuserdata/
 *.xcresult
 .env
+
+# libghostty-vt spike artefacts (see scripts/build_ghostty_vt.sh)
+build/vendor/
+build/ghostty-src/
+build/ghostty-out/
