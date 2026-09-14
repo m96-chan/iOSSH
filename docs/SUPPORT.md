@@ -2,9 +2,6 @@
 
 English | [日本語](SUPPORT.jp.md)
 
-> Publication draft. Set this page's public URL before using it as the App Store
-> Support URL. The URL has not yet been provided.
-
 iOSSH is an SSH terminal for iPhone and iPad.
 
 ## Contact

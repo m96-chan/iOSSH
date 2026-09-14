@@ -2,7 +2,7 @@
 
 [English](APP_STORE.md) | 日本語
 
-実装済みの機能に基づく原稿です。App Store Connectには未提出です。個人のApple Developer契約とBundle ID `io.github.m96-chan.iossh` で公開を準備します。
+実装済みの機能に基づく原稿です。ビルドはApp Store Connectへアップロード済みですが、審査には未提出です。個人のApple Developer契約とBundle ID `io.github.m96-chan.iossh` で公開を準備します。
 
 旧 `moe.technologies.iossh` の開発ビルドとは別アプリとしてインストールされます。保存済みホスト、資格情報、設定、追加フォントは自動移行されません。端末一覧を取得する前に、新アプリから書き出した **Import Tailscale Hosts** で旧ショートカットを置き換えてください。[移行手順](../shortcuts/README.md#updating-from-the-previous-app-identifier)も参照してください。
 
@@ -36,9 +36,8 @@ Tailscaleは任意の機能です。通常のSSHはTailscaleなしで確認で�
 
 ## 公開までに必要な情報・確認
 
-- 新しいBundle IDの配布用チームへの登録を確認し、App Store Connectのアプリ情報を作成して、署名付きアーカイブを検証する。
 - ストア名の空き状況、主言語、価格、配信国を確定する。
-- 実際の問い合わせ先を含めて[プライバシーポリシー案](PRIVACY.jp.md)と[サポートページ案](SUPPORT.jp.md)を確定・公開する。App Store ConnectへのURL登録とともに、アプリ内からも開けるリンクを設ける。
+- 公開済みの[プライバシーポリシー](PRIVACY.jp.md)と[サポートページ](SUPPORT.jp.md)のURLをApp Store Connectへ登録し、アプリ内の **About** にある同じリンクを確認する。
 - 配布する実装に基づき、App Privacy、年齢区分、暗号化・輸出コンプライアンスの回答を確定する。SSHは依存ライブラリを通じて暗号処理を使うため、`ITSAppUsesNonExemptEncryption` を推測で自動設定していない。
 - **Settings → Open source licenses**で同梱ソフトウェアの表記と、別に用意したフォントのライセンスを確認する。ソフトウェアの表記は生成物であり、`scripts/generate_third_party_notices.py --check` が、アプリが実際にリンクしている依存関係との食い違いを検出して失敗する。`Package.resolved` に現れないまま全ビルドに含まれる libghostty-vt もこの対象に含めている。
 - 最終ビルドのiPhone・iPadで、私用サーバーの情報を含めず、テスト用接続先によるストア向けスクリーンショットを撮影する。[開発ノート](DEVELOPMENT.jp.md)の実機確認を完了する。

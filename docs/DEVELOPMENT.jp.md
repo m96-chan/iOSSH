@@ -156,7 +156,7 @@ swift test --package-path Packages/SSHCore --filter SSHIntegrationTests
 
 Bundle IDとShortcutsのコールバックURLスキームは `io.github.m96-chan.iossh` を使う。共有プロジェクトの `DEVELOPMENT_TEAM` は空のままにし、ビルド時にチームを指定する。旧 `moe.technologies.iossh` とは別アプリとして共存し、保存済みホスト、Keychainの資格情報、設定、信頼済みホスト鍵、追加フォントは自動移行されない。新アプリから書き出したファイルで旧 **Import Tailscale Hosts** ショートカットを同名のまま置き換え、新アプリから端末一覧を取得する。[ショートカットの移行手順](../shortcuts/README.md#updating-from-the-previous-app-identifier)を参照。
 
-[ストア掲載文と審査メモ](APP_STORE.jp.md)、[サポート](SUPPORT.jp.md)、[プライバシーポリシー](PRIVACY.jp.md)は、公開に必要な残りの情報を確定するまで草案とする。アプリのプライバシーマニフェストは、アプリ内設定用のUserDefaultsへのアクセスを理由 `CA92.1` で申告している。
+[ストア掲載文と審査メモ](APP_STORE.jp.md)で、App Store Connectに必要な残りの入力を管理する。公開用の[サポートページ](SUPPORT.jp.md)と[プライバシーポリシー](PRIVACY.jp.md)は、アプリ内の **About** からリンクする。アプリのプライバシーマニフェストは、アプリ内設定用のUserDefaultsへのアクセスを理由 `CA92.1` で申告している。
 
 ソフトウェアのライセンス本文は `App/Resources/ThirdPartyNotices.txt` に同梱し、**Settings → Open source licenses**から閲覧できる。依存更新時はリンク対象を確認し、Xcodeが解決したチェックアウトから再生成する。
 

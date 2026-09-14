@@ -4,8 +4,6 @@
 
 Last updated: September 13, 2026
 
-> Release-review draft. Before publication, the developer must set the public URL for this policy. The URL has not yet been provided.
-
 ## About iOSSH
 
 iOSSH is an SSH terminal app for iPhone and iPad. It does not require an iOSSH account. There is no built-in service that uploads your saved hosts, SSH credentials, or terminal contents to the developer. The app connects to servers you choose and uses the system and third-party services described below when you use those features.
