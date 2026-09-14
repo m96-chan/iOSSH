@@ -1,0 +1,39 @@
+name: Cache libghostty-vt
+
+# Every pull request was rebuilding libghostty-vt from source — installing Zig and compiling
+# the pinned revision, about four minutes — even though the pin had not moved in weeks.
+#
+# The reason is cache scoping, not the cache key. `ci.yml` only runs on `pull_request`, so the
+# only caches it ever wrote were in `refs/pull/N/merge` scopes, which no sibling pull request
+# can read. Five entries existed under five different pull requests, all under the same key,
+# none of them reachable. A cache written from a push to main is readable by every pull request
+# opened against it, which is what this exists to produce.
+#
+# It runs on every push to main rather than only when the build script changes, because the
+# first one has to happen before there is anything to hit. Once the cache is warm this job is
+# a checkout and a cache lookup.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  xcframework:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Restore libghostty-vt
+        id: ghostty
+        uses: actions/cache@v4
+        with:
+          path: build/vendor/ghostty-vt.xcframework
+          key: ghostty-vt-${{ hashFiles('scripts/build_ghostty_vt.sh') }}
+      - name: Build libghostty-vt
+        if: steps.ghostty.outputs.cache-hit != 'true'
+        run: |
+          brew install zig
+          scripts/build_ghostty_vt.sh
