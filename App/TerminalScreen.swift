@@ -113,6 +113,12 @@ struct TerminalScreen: View {
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .padding(.horizontal, 6)
                 .padding(.top, 6)
+                // SwiftUI insets by what `keyboardLayoutGuide` reports, which with a hardware
+                // keyboard is the accessory row plus the safe area beneath it — the surface then
+                // ends a safe area above the accessory it is avoiding, wasting a row (#14). The
+                // view clamps its own viewport from the keyboard and accessory rectangles it
+                // already tracks, so let it, and take the whole height to clamp from.
+                .ignoresSafeArea(.keyboard)
         } else {
             terminal.overlay(alignment: .top) {
                 VStack(spacing: 8) {
@@ -123,6 +129,7 @@ struct TerminalScreen: View {
                         .padding(.horizontal, 10)
                 }
             }
+            .ignoresSafeArea(.keyboard)
         }
     }
 

@@ -5,6 +5,21 @@ import Testing
 struct TerminalViewportTests {
     private let cell = CGSize(width: 10, height: 20)
 
+    /// #14: with a hardware keyboard the guide reports the accessory row plus the safe area
+    /// beneath it. While SwiftUI inset the surface by that larger figure the view ended above
+    /// the accessory it was avoiding and the rows in between were never offered. Measured on an
+    /// iPad Pro 11-inch: accessory top 1016, guide bottom 1068, a 12 point strip.
+    @Test
+    func hardwareKeyboardLeavesNoStripAboveTheAccessoryRow() throws {
+        let bounds = CGRect(x: 0, y: 0, width: 834, height: 1068)
+        let viewport = TerminalViewportLayout.visibleBounds(
+            in: bounds, safeAreaBottom: 0,
+            keyboardFrame: CGRect(x: 0, y: 1004, width: 834, height: 64),
+            accessoryFrame: CGRect(x: 0, y: 1016, width: 834, height: 52))
+        // The accessory's own top, not the guide's, which sits a safe area higher.
+        #expect(viewport.maxY == 1016)
+    }
+
     @Test
     func accessoryIsExcludedWhenSwiftUIOnlyAvoidsTheKeyboard() throws {
         let bounds = CGRect(x: 0, y: 0, width: 390, height: 600)
