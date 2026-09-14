@@ -2,10 +2,21 @@ name: Build and test
 
 on:
   pull_request:
+  # main is no longer covered by a required status check, so a merge can land without anything
+  # having reported on it. This is what reports: it will not stop a break getting in, but it
+  # names the commit that caused one instead of leaving it to be discovered later.
+  #
+  # It also warms the caches. A `pull_request` run writes into `refs/pull/N/merge`, which no
+  # other pull request can read, so every one of them was rebuilding libghostty-vt from source.
+  # A run on main writes where they can all restore from.
+  push:
+    branches: [main]
 
 concurrency:
-  group: ci-pr-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
+  # A pull request supersedes its own earlier runs. main does not: a merge must not cancel the
+  # run verifying the merge before it, or a break lands with nothing having reported on it.
+  group: ci-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
