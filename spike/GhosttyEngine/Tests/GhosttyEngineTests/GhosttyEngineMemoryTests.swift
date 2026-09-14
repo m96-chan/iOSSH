@@ -73,6 +73,70 @@ struct GhosttyEngineMemoryTests {
         #expect(displays == 1)
     }
 
+    /// Deleting an image is the ordinary end of a Kitty image's life — `icat` does it, and so
+    /// does any full-screen program that repaints. The engine has to give the bytes back, and
+    /// it must not ask the app to drop the frame it is showing to do it: `ConnectionModel`
+    /// answers `onImageCacheInvalidated` by publishing a nil snapshot, so the terminal draws
+    /// its background colour for a frame. Announcing this reap is what made a repaint flash
+    /// black on this engine while `SwiftTermEngine` stayed steady.
+    @Test func deletingAnImageGivesItsBytesBackWithoutDroppingTheFrame() throws {
+        let budget = TerminalImageBudget(maximumTotalBytes: 1 << 20)
+        let engine = try #require(GhosttyEngine(columns: 20, rows: 6, imageBudget: budget))
+        engine.setCellSize(width: 8, height: 16)
+        engine.feed(kittyImage(id: 1, width: 8, height: 8))
+        #expect(engine.snapshot().images.map(\.id) == [1])
+        #expect(budget.totalBytes == 8 * 8 * 4)
+
+        var invalidations = 0
+        engine.onImageCacheInvalidated = { invalidations += 1 }
+        // a=d,d=I deletes one image by id, its pixels included.
+        engine.feed(Data("\u{1b}_Ga=d,d=I,i=1\u{1b}\\".utf8))
+        #expect(engine.snapshot().images.isEmpty)
+        #expect(budget.totalBytes == 0)
+        #expect(invalidations == 0)
+    }
+
+    /// The same for one generation of an image replacing another, which is how an animated or
+    /// repeatedly redrawn image arrives. The frame on screen holds the previous pixels of an
+    /// image that still exists, which is a frame, not stale data.
+    @Test func replacingAnImagesPixelsDoesNotDropTheFrame() throws {
+        let budget = TerminalImageBudget(maximumTotalBytes: 1 << 20)
+        let engine = try #require(GhosttyEngine(columns: 20, rows: 6, imageBudget: budget))
+        engine.setCellSize(width: 8, height: 16)
+        engine.feed(kittyImage(id: 1, width: 8, height: 8))
+        #expect(engine.snapshot().images.map(\.id) == [1])
+
+        var invalidations = 0
+        engine.onImageCacheInvalidated = { invalidations += 1 }
+        engine.feed(kittyImage(id: 1, width: 4, height: 4))
+        #expect(engine.snapshot().images.map(\.id) == [1])
+        #expect(budget.totalBytes == 4 * 4 * 4)
+        #expect(invalidations == 0)
+    }
+
+    /// Stepping through a video: a new image id per frame, for long enough that both ceilings
+    /// start displacing earlier frames — the count cap first, then the workspace's byte budget
+    /// reaching back into this engine. Neither is another session taking memory away, so
+    /// neither may ask the app to drop the frame on screen. Announcing them put a background
+    /// coloured frame between every pair of video frames on this engine.
+    @Test func steppingThroughVideoFramesNeverDropsTheFrameOnScreen() throws {
+        // Sixteen 8x8 frames fit; the seventeenth has to displace one, and every frame after
+        // it does the same.
+        let budget = TerminalImageBudget(maximumTotalBytes: 16 * 8 * 8 * 4)
+        let engine = try #require(GhosttyEngine(columns: 20, rows: 6, imageBudget: budget))
+        engine.setCellSize(width: 8, height: 16)
+        var invalidations = 0
+        engine.onImageCacheInvalidated = { invalidations += 1 }
+
+        for frame in 1...80 {
+            engine.feed(kittyImage(id: UInt32(frame), width: 8, height: 8))
+            _ = engine.snapshot()
+        }
+        #expect(invalidations == 0)
+        // Silence is not the budget going unenforced: the ceiling still holds.
+        #expect(budget.totalBytes <= 16 * 8 * 8 * 4)
+    }
+
     @Test func oneImageLargerThanTheCeilingIsRefusedRatherThanDecoded() throws {
         // Four pixels of RGBA is sixteen bytes, so a ceiling of eight cannot hold it. The
         // engine used to have no byte ceiling at all: a count of 64 entries admitted 64 images

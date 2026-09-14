@@ -740,6 +740,13 @@ import TerminalCore
             return nil
         }
 
+        // From here to the store, every entry this drops is one this engine is displacing with
+        // an image it has just decoded — its own older pixels, whether through the count cap
+        // below or through the budget reaching back into this owner. A fresh snapshot is
+        // already on its way, so none of it is announced. See `removeImage(_:)`.
+        isMakingRoomForOwnImage = true
+        defer { isMakingRoomForOwnImage = false }
+
         // Replacing the pixels of an id already held: give back the old bytes first, so the
         // budget never counts two generations of the same image at once.
         if imageCache[id] != nil { removeImage(id) }
@@ -760,20 +767,51 @@ import TerminalCore
         return (converted, Int(width), Int(height), generation)
     }
 
-    /// `TerminalImageBudgetOwner`: the workspace evicting this engine's image to make room for
-    /// another session's. The budget has already removed its accounting entry.
-    public func evictImage(_ id: UInt32) { removeImage(id) }
+    /// True while this engine is displacing its own pixels with an image it has just decoded,
+    /// so the budget calling back into it is not another session taking the memory away.
+    private var isMakingRoomForOwnImage = false
+
+    /// `TerminalImageBudgetOwner`: the budget evicting this engine's image. The budget has
+    /// already removed its accounting entry.
+    ///
+    /// Announced unless this engine asked for the room itself. A memory warning, or another
+    /// session's image displacing this one, is memory being taken away from a frame that may
+    /// be the last one a hidden session ever draws — exactly what #26 was about. This engine
+    /// making room for its own next frame is not, and announcing it once per frame is what
+    /// made stepping through a video strobe.
+    public func evictImage(_ id: UInt32) {
+        if isMakingRoomForOwnImage { removeImage(id) } else { evictImageAnnouncing(id) }
+    }
 
     /// Drops one image's pixels, its accounting, and the snapshot still holding them. Without
     /// the callback the published snapshot keeps the bytes alive in a hidden view's last frame
     /// and the eviction frees nothing — `onImageCacheInvalidated` was declared here and never
     /// called (#26).
-    private func removeImage(_ id: UInt32) {
-        guard imageCache.removeValue(forKey: id) != nil else { return }
-        imageBudget?.release(imageID: id, owner: self)
+    private func evictImageAnnouncing(_ id: UInt32) {
+        guard removeImage(id) else { return }
         previous = nil
         onImageCacheInvalidated?()
         changed()
+    }
+
+    /// Drops one image's pixels and its accounting without asking the caller for anything.
+    ///
+    /// The announcement above costs a frame. `ConnectionModel` answers it by clearing the
+    /// published snapshot and scheduling another, so the view draws its background colour once
+    /// before the replacement arrives. That is the right trade for an eviction, where the whole
+    /// point is to stop a frame already on screen from keeping the bytes alive.
+    ///
+    /// It is the wrong trade for bookkeeping. Reaping an entry whose image the library has
+    /// already dropped, or replacing one generation of an image with the next, leaves the frame
+    /// on screen still being the frame the terminal means, and nothing is waiting on its
+    /// memory — the snapshot that replaces it is already being built. Announcing those made a
+    /// repaint that deletes an image flash the terminal's background on this engine, which is
+    /// the flicker choosing this engine is supposed to avoid.
+    @discardableResult
+    private func removeImage(_ id: UInt32) -> Bool {
+        guard imageCache.removeValue(forKey: id) != nil else { return false }
+        imageBudget?.release(imageID: id, owner: self)
+        return true
     }
 
     private func releaseAllImages() {
