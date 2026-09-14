@@ -182,6 +182,7 @@ private final class LayoutConnectionFixture {
 private final class LayoutTransport: ConnectionTransport {
     let marker: String
     var onData: (@Sendable (Data) -> Void)?
+    var isReadyForMore: (@Sendable () -> Bool)?
     var onDisconnect: (@MainActor (String?) -> Void)?
     var onAuthenticationBanner: (@MainActor (String) -> Void)?
     private(set) var isConnected = false

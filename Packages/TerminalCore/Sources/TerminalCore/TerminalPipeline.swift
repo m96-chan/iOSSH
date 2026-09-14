@@ -91,6 +91,9 @@ public final class TerminalPipeline: Sendable {
         task.cancel()
     }
 
+    /// Batches submitted but not parsed yet. Above zero means the parser is behind.
+    public var backlog: Int { unparsed.count }
+
     public func feed(_ data: Data) {
         unparsed.increment()
         commands.yield(.data(data))
@@ -160,5 +163,11 @@ private final class Counter: Sendable {
         lock.lock()
         defer { lock.unlock() }
         return value == 0
+    }
+
+    var count: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return value
     }
 }

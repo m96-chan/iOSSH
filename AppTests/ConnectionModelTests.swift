@@ -26,6 +26,7 @@ private final class Suspension {
 @MainActor
 private final class TestTransport: ConnectionTransport {
     var onData: (@Sendable (Data) -> Void)?
+    var isReadyForMore: (@Sendable () -> Bool)?
     var onDisconnect: (@MainActor (String?) -> Void)?
     var onAuthenticationBanner: (@MainActor (String) -> Void)?
     var isConnected = false

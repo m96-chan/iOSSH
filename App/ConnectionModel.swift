@@ -8,6 +8,7 @@ import TerminalRender
 @MainActor
 protocol ConnectionTransport: AnyObject {
     var onData: (@Sendable (Data) -> Void)? { get set }
+    var isReadyForMore: (@Sendable () -> Bool)? { get set }
     var onDisconnect: (@MainActor (String?) -> Void)? { get set }
     var onAuthenticationBanner: (@MainActor (String) -> Void)? { get set }
     var isConnected: Bool { get }
@@ -218,6 +219,9 @@ final class ConnectionModel: Identifiable {
                 guard gate.isOpen else { return }
                 pipeline.feed(data)
             }
+            // Enough to keep the parser fed across a repaint without letting a shell that
+            // outruns it queue megabytes of unparsed output on the device.
+            transport.isReadyForMore = { [pipeline = terminal] in pipeline.backlog < 64 }
             transport.onDisconnect = { [weak self] reason in
                 guard let self, self.attempt == token else { return }
                 self.cancelForegroundCheck()

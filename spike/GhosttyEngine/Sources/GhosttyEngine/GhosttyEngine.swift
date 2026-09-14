@@ -36,6 +36,9 @@ import TerminalCore
     private nonisolated(unsafe) var reportedSize = GhosttySizeReportSize(rows: 24, columns: 80,
                                                                         cell_width: 8, cell_height: 16)
 
+    /// Matches `SwiftTermEngine`'s default.
+    private static let scrollbackLines = 10_000
+
     public init(columns: Int = 80, rows: Int = 24) {
         var handle: GhosttyTerminal?
         guard ghostty_terminal_new(nil, &handle, UInt16(min(1000, max(2, columns))),
@@ -51,6 +54,13 @@ import TerminalCore
         guard let terminal else { return }
         let context = Unmanaged.passUnretained(self).toOpaque()
         _ = ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_USERDATA, context)
+
+        // Without this the library keeps every line a shell ever printed. Measured on device,
+        // a program writing continuously took the app past 450MB and still climbing, because
+        // nothing here ever told it to stop. `SwiftTermEngine` keeps 10,000 lines; match it, so
+        // choosing the parser in Settings does not also change how much history is kept.
+        var scrollback = Self.scrollbackLines
+        _ = ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_SCROLLBACK_MAX_LINES, &scrollback)
 
         // These run synchronously inside ghostty_terminal_vt_write, which this engine only
         // calls from its own isolation. They collect into storage the engine flushes right
