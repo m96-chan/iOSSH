@@ -9,23 +9,57 @@ concurrency:
 
 permissions:
   contents: read
+  pull-requests: read
 
 jobs:
   ios:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v7
+      # A documentation-only pull request cannot change what the app builds or how it behaves,
+      # and everything below takes about 45 minutes.
+      #
+      # Gated per step rather than with `paths-ignore` on purpose. `ios` is a required status
+      # check on main and `enforce_admins` is on, so a workflow that never runs leaves that
+      # check pending forever and the pull request becomes unmergeable by anybody, including an
+      # administrator. A job that runs and skips its steps still reports `ios` as successful.
+      - name: Decide whether this change can reach the build
+        id: scope
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          files=$(gh api "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" \
+                    --paginate --jq '.[].filename')
+          printf 'Changed files:\n%s\n' "$files"
+          # Markdown and the licence at the repository root are not compiled, not bundled and
+          # not read by anything here: the app's sources are App/, its only extra resource is
+          # the shortcut, and the notice generator reads Package.resolved, project.yml,
+          # scripts/build_ghostty_vt.sh and scripts/third_party_licenses. Everything else
+          # builds, including an unexpectedly empty list.
+          # `grep -v` and not `grep -qv`: the two disagree on their exit status under at least
+          # one drop-in grep in the wild, so this tests the output rather than the status.
+          other=$(printf '%s\n' "$files" | grep -vE '\.md$|^LICENSE$' || true)
+          if [ -n "$files" ] && [ -z "$other" ]; then
+            echo "Documentation only. Skipping the build and tests."
+            echo "build=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "build=true" >> "$GITHUB_OUTPUT"
+          fi
       - name: Show toolchain
+        if: steps.scope.outputs.build == 'true'
         run: |
           xcodebuild -version
           swift --version
       # Reading two JSON files, so it costs nothing and is worth failing on before a build.
       - name: Check package pins agree
+        if: steps.scope.outputs.build == 'true'
         run: make check-pins
       - name: Install Metal compiler component
+        if: steps.scope.outputs.build == 'true'
         run: xcodebuild -downloadComponent MetalToolchain
       - name: Restore libghostty-vt
         id: ghostty
+        if: steps.scope.outputs.build == 'true'
         uses: actions/cache@v4
         with:
           path: build/vendor/ghostty-vt.xcframework
@@ -34,24 +68,28 @@ jobs:
       # cache key is the build script, which carries the pinned commit, so this runs again only
       # when the pin moves.
       - name: Build libghostty-vt
-        if: steps.ghostty.outputs.cache-hit != 'true'
+        if: steps.scope.outputs.build == 'true' && steps.ghostty.outputs.cache-hit != 'true'
         run: |
           brew install zig
           scripts/build_ghostty_vt.sh
       # After the xcframework exists, because GhosttyEngine's tests link against it.
       - name: Test SSH, terminal and Ghostty packages
+        if: steps.scope.outputs.build == 'true'
         run: make test
       - name: Build iPhone and iPad app
+        if: steps.scope.outputs.build == 'true'
         run: make build
       # The bundled notices are what the store submission ships, and nothing else compares them
       # against the dependencies the app actually links. The checkouts are the ones make build
       # just resolved.
       - name: Check bundled third-party notices
+        if: steps.scope.outputs.build == 'true'
         run: python3 scripts/generate_third_party_notices.py --checkouts build/DerivedData/SourcePackages/checkouts --check
       # The iPad workspace tests are idiom-gated and skip on an iPhone, so they need a second
       # destination. A second test invocation rather than a job matrix: the app and its test
       # bundles are already built in this job, and the matrix would rebuild both from scratch.
       - name: Test app lifecycle and UI on iPhone and iPad
+        if: steps.scope.outputs.build == 'true'
         run: |
           # Both destinations boot a device, and a failing xcodebuild would otherwise leave them
           # running for the rest of the job, so the trap covers the failure path too.
@@ -61,7 +99,7 @@ jobs:
             xcodebuild -project iOSSH.xcodeproj -scheme iOSSH -destination "platform=iOS Simulator,id=$udid" -derivedDataPath build/DerivedData -resultBundlePath "build/CI-$family.xcresult" -skipPackagePluginValidation -parallel-testing-enabled NO test
           done
       - name: Upload test results and screenshots
-        if: always()
+        if: always() && steps.scope.outputs.build == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: ios-test-results
