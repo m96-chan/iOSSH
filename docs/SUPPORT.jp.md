@@ -2,8 +2,6 @@
 
 [English](SUPPORT.md) | 日本語
 
-> 公開用の草案です。App StoreのサポートURLとして使用する前に、このページの公開URLを確定してください。URLはまだ提供されていません。
-
 iOSSHはiPhone・iPad向けのSSHターミナルです。
 
 ## お問い合わせ

@@ -2,9 +2,10 @@
 
 English | [日本語](APP_STORE.jp.md)
 
-These fields describe the implemented app. They have not been submitted to App
-Store Connect. The release uses the individual Apple Developer membership and
-bundle identifier `io.github.m96-chan.iossh`.
+These fields describe the implemented app. A build has been uploaded to App
+Store Connect but has not been submitted for review. The release uses the
+individual Apple Developer membership and bundle identifier
+`io.github.m96-chan.iossh`.
 
 This installs separately from previous `moe.technologies.iossh` development
 builds. Saved hosts, credentials, settings, and imported fonts do not migrate
@@ -60,12 +61,10 @@ before registration.
 
 ## Remaining release inputs
 
-- Verify the new bundle ID with the distribution team, then create the
-  App Store Connect app record and validate the signed archive.
 - Confirm the store name's availability, primary language, price, and countries.
-- Finalize and publish the [privacy policy draft](PRIVACY.md), including a real
-  contact method, and the [support page draft](SUPPORT.md). Add accessible links
-  inside the app as well as the public URLs in App Store Connect.
+- Register the public [privacy policy](PRIVACY.md) and [support page](SUPPORT.md)
+  URLs in App Store Connect, and verify the matching links in the app's
+  **About** section.
 - Complete App Privacy, the age rating, and encryption/export compliance answers
   based on the shipped app. SSH uses cryptography through its dependencies;
   `ITSAppUsesNonExemptEncryption` has not been guessed or set automatically.

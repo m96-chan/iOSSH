@@ -102,6 +102,10 @@ struct SettingsView: View {
                 }
                 .font(.subheadline)
                 Section("About") {
+                    Link("Privacy Policy", destination: Self.privacyPolicyURL)
+                        .accessibilityIdentifier("privacyPolicyLink")
+                    Link("Support", destination: Self.supportURL)
+                        .accessibilityIdentifier("supportLink")
                     NavigationLink("Open source licenses") {
                         ScrollView {
                             Text(Self.thirdPartyNotices)
@@ -141,6 +145,13 @@ struct SettingsView: View {
             }
         }
     }
+
+    private static let privacyPolicyURL = URL(
+        string: "https://github.com/m96-chan/iOSSH/blob/main/docs/PRIVACY.md"
+    )!
+    private static let supportURL = URL(
+        string: "https://github.com/m96-chan/iOSSH/blob/main/docs/SUPPORT.md"
+    )!
 
     private static let thirdPartyNotices: String = {
         guard let url = Bundle.main.url(forResource: "ThirdPartyNotices", withExtension: "txt"),

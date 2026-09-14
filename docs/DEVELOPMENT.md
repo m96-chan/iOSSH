@@ -163,10 +163,11 @@ Replace the old **Import Tailscale Hosts** shortcut with the file exported from
 the new app, keeping its name, then fetch devices from the new app. See the
 [shortcut migration steps](../shortcuts/README.md#updating-from-the-previous-app-identifier).
 
-[Store listing and review notes](APP_STORE.md), [support](SUPPORT.md), and
-[privacy policy](PRIVACY.md) are drafts until their remaining release inputs are
-filled. The app's privacy manifest declares its app-local UserDefaults access
-with reason `CA92.1`.
+[Store listing and review notes](APP_STORE.md) track the remaining App Store
+Connect inputs. The public [support page](SUPPORT.md) and
+[privacy policy](PRIVACY.md) are linked from the app's **About** section. The
+app's privacy manifest declares its app-local UserDefaults access with reason
+`CA92.1`.
 
 Software license text is bundled as `App/Resources/ThirdPartyNotices.txt` and
 available under **Settings → Open source licenses**. After changing dependencies,

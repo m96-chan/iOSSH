@@ -191,6 +191,13 @@ final class iOSSHUITests: XCTestCase {
         app.launch()
         app.buttons["Settings"].tap()
         XCTAssertTrue(app.staticTexts["Terminal font preview"].waitForExistence(timeout: 5))
+        let privacyPolicyLink = app.descendants(matching: .any)["privacyPolicyLink"]
+        for _ in 0..<4 {
+            if privacyPolicyLink.exists { break }
+            app.swipeUp()
+        }
+        XCTAssertTrue(privacyPolicyLink.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["supportLink"].waitForExistence(timeout: 5))
         app.buttons["Done"].tap()
         app.buttons["addFirstHost"].tap()
         app.textFields["hostName"].tap()
