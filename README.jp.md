@@ -357,7 +357,7 @@ open iOSSH.xcodeproj
 
 ## 13. ライセンス
 
-MIT（予定）
+[MIT](LICENSE)
 
 ## 参照
 

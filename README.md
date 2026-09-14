@@ -357,7 +357,7 @@ Define what counts as working before implementation begins.
 
 ## 13. License
 
-MIT (planned)
+[MIT](LICENSE)
 
 ## References
 
