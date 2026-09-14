@@ -34,15 +34,34 @@ public final class TerminalSurface {
 
     public func publish(_ snapshot: TerminalSnapshot?) {
         latest = snapshot
-        view?.update(snapshot)
+        // The workspace gives every session a surface but reuses one renderer across its tabs,
+        // so a hidden session still holds a reference to the view the visible one is drawing
+        // in. Only the surface the view is currently showing may write to it.
+        guard let view, view.isShowing(self) else { return }
+        view.update(snapshot)
     }
 
     /// Called as the representable makes or updates its view; the last snapshot is replayed so
-    /// a view created after one was published still has something to draw.
+    /// a view created after one was published still has something to draw, and so does a view
+    /// that has since drawn another session's grid.
+    ///
+    /// This used to skip the replay whenever it was handed the view it already held, because
+    /// the representable calls it on every SwiftUI update and re-sending an unchanged grid is
+    /// wasted work. That test asks whether the surface saw this view last, which is not the
+    /// question: the workspace reuses one renderer for every tab, so a surface can hold a view
+    /// that has since drawn another session. Returning to such a tab took the early exit and
+    /// nothing repainted it — TerminalView.configure(_:) had just called setInputIdentity(_:),
+    /// which blanks the grid for the incoming session, and ConnectionModel.publish(_:) drops a
+    /// snapshot equal to the one it last sent, so an idle shell never offered a replacement.
+    /// The tab came back empty until the shell wrote something new.
     func attach(_ view: TerminalMetalView) {
-        guard self.view !== view else { return }
         self.view = view
-        view.update(latest)
+        guard !view.isShowing(self) else { return }
+        // Forced, because update(_:) compares revision, columns and rows, and a revision counts
+        // one session's own updates. Two shells that have each drawn the same number of times
+        // at the same size produce equal triples, so the dedupe would discard the handover and
+        // leave the previous session's grid on screen.
+        view.adopt(self, snapshot: latest)
     }
 }
 
@@ -163,6 +182,8 @@ public final class TerminalMetalView: MTKView, UIKeyInput, @preconcurrency UIEdi
     // a tab transition. Its result must retain its original input generation.
     var pasteTextLoader: @MainActor () async -> String? = { UIPasteboard.general.string }
     private var snapshot: TerminalSnapshot?
+    /// The surface whose grid this view currently shows; see TerminalSurface.attach(_:).
+    private weak var showingSurface: TerminalSurface?
     private var cursorTimer: Timer?
     private var controlPressed = false
     private var selectionAnchor: Int?
@@ -415,6 +436,9 @@ public final class TerminalMetalView: MTKView, UIKeyInput, @preconcurrency UIEdi
         resetTransientInput()
         inputIdentity = identity
         snapshot = nil
+        // A new session's identity means the grid on screen is no longer anybody's, so the
+        // surface that follows has to hand its own back rather than find the view still claimed.
+        showingSurface = nil
         renderer?.update(nil)
         panRemainder = 0
         inputNeedsViewport = true
@@ -473,8 +497,19 @@ public final class TerminalMetalView: MTKView, UIKeyInput, @preconcurrency UIEdi
         }
     }
 
-    public func update(_ value: TerminalSnapshot?) {
-        guard snapshot?.revision != value?.revision || snapshot?.columns != value?.columns || snapshot?.rows != value?.rows else { return }
+    func isShowing(_ surface: TerminalSurface) -> Bool { showingSurface === surface }
+
+    /// Hands the view to another session's surface. The grid has to be replayed whether or not
+    /// it looks like the one already there, which is why this bypasses update(_:)'s dedupe.
+    func adopt(_ surface: TerminalSurface, snapshot value: TerminalSnapshot?) {
+        showingSurface = surface
+        apply(value, force: true)
+    }
+
+    public func update(_ value: TerminalSnapshot?) { apply(value, force: false) }
+
+    private func apply(_ value: TerminalSnapshot?, force: Bool) {
+        guard force || snapshot?.revision != value?.revision || snapshot?.columns != value?.columns || snapshot?.rows != value?.rows else { return }
         if snapshot?.columns != value?.columns || snapshot?.rows != value?.rows || snapshot?.scrollbackOffset != value?.scrollbackOffset {
             clearSelection()
         }
@@ -501,6 +536,7 @@ public final class TerminalMetalView: MTKView, UIKeyInput, @preconcurrency UIEdi
         delegate = nil
         renderer = nil
         snapshot = nil
+        showingSurface = nil
         onInput = nil
         onResize = nil
         onKey = nil
@@ -852,9 +888,14 @@ public final class TerminalMetalView: MTKView, UIKeyInput, @preconcurrency UIEdi
     }
 
     private func makeAccessory() -> UIView {
-        let container = TerminalAccessoryView(frame: CGRect(x: 0, y: 0, width: 390, height: 52), inputViewStyle: .default)
-        container.backgroundColor = .secondarySystemBackground
-        container.isOpaque = true
+        // `.keyboard` draws the same translucent material the software keyboard sits on, which
+        // the opaque `.secondarySystemBackground` band used to hide. That band met the terminal
+        // as a hard square edge while every button on it is rounded, and the terminal surface
+        // above is clipped to a 14pt radius — three corner treatments in one strip. Letting the
+        // system material show through removes the edge instead of adding a fourth.
+        let container = TerminalAccessoryView(frame: CGRect(x: 0, y: 0, width: 390, height: 52), inputViewStyle: .keyboard)
+        container.backgroundColor = .clear
+        container.isOpaque = false
         container.onGeometryChange = { [weak self] in self?.requestViewportRefresh() }
         container.accessibilityIdentifier = "terminalAccessory"
         let scroll = UIScrollView()
