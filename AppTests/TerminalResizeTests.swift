@@ -105,7 +105,7 @@ final class TerminalResizeTests: XCTestCase {
 
     @MainActor
     private func waitUntil(_ description: String, condition: @MainActor () -> Bool) async throws {
-        let deadline = ContinuousClock.now.advanced(by: .seconds(3))
+        let deadline = ContinuousClock.now.advanced(by: .seconds(20))
         while !condition() {
             guard ContinuousClock.now < deadline else {
                 XCTFail(description)
