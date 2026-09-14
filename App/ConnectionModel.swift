@@ -22,84 +22,6 @@ protocol ConnectionTransport: AnyObject {
 
 extension SSHSession: ConnectionTransport {}
 
-/// Temporary instrumentation for the frame-rate work. `commit` is how long a cycle took from
-/// the parser asking for a repaint to the snapshot being published; `gap` is the time between
-/// one snapshot being published and the next repaint request arriving, which is where the
-/// renderer and SwiftUI show up. Remove once the question is settled.
-@MainActor fileprivate struct FrameLog {
-    private var frames = 0
-    private var commit = 0.0
-    private var gap = 0.0
-    private var published: ContinuousClock.Instant?
-    private var window = ContinuousClock.now
-
-    private var damaged = 0
-    private var full = 0
-    private var empty = 0
-    private var images = 0
-
-    mutating func record(start: ContinuousClock.Instant, snapshot: TerminalSnapshot?) {
-        let now = ContinuousClock.now
-        if let snapshot {
-            let rows = snapshot.damageRows.count
-            damaged += rows
-            if rows == 0 { empty += 1 }
-            if snapshot.rows > 0, rows >= snapshot.rows { full += 1 }
-            images += snapshot.images.count
-        }
-        frames += 1
-        commit += Self.milliseconds(start.duration(to: now))
-        if let published { gap += Self.milliseconds(published.duration(to: start)) }
-        published = now
-        let elapsed = Self.milliseconds(window.duration(to: now))
-        guard elapsed >= 1000 else { return }
-        print(String(format: "FRAMES %.1f/s commit=%.1fms gap=%.1fms rows=%.1f full=%d empty=%d images=%.1f",
-                     Double(frames) * 1000 / elapsed, commit / Double(frames), gap / Double(frames),
-                     Double(damaged) / Double(frames), full, empty, Double(images) / Double(frames)))
-        damaged = 0
-        full = 0
-        empty = 0
-        images = 0
-        frames = 0
-        commit = 0
-        gap = 0
-        window = now
-    }
-
-    private static func milliseconds(_ duration: Duration) -> Double {
-        Double(duration.components.seconds) * 1000 + Double(duration.components.attoseconds) / 1e15
-    }
-}
-
-/// Temporary instrumentation for the frame-rate work. Records where SSH output arrives, which
-/// is off the main actor, so it takes a lock. Remove once the question is settled.
-private let inputLog = ByteLog()
-
-private final class ByteLog: @unchecked Sendable {
-    private let lock = NSLock()
-    private var bytes = 0
-    private var chunks = 0
-    private var window = ContinuousClock.now
-
-    func record(_ count: Int) {
-        lock.lock()
-        bytes += count
-        chunks += 1
-        let now = ContinuousClock.now
-        let elapsed = Double(window.duration(to: now).components.seconds) * 1000
-            + Double(window.duration(to: now).components.attoseconds) / 1e15
-        guard elapsed >= 1000 else { lock.unlock(); return }
-        let line = String(format: "INPUT %.0f KB/s chunks=%.0f/s mean=%d bytes",
-                          Double(bytes) / elapsed, Double(chunks) * 1000 / elapsed,
-                          bytes / max(chunks, 1))
-        bytes = 0
-        chunks = 0
-        window = now
-        lock.unlock()
-        print(line)
-    }
-}
-
 /// Open until the attempt that installed it is replaced or closed.
 private final class OutputGate: @unchecked Sendable {
     private let lock = NSLock()
@@ -202,12 +124,12 @@ final class ConnectionModel: Identifiable {
     @ObservationIgnored private var outputGate: OutputGate?
     /// When the last snapshot reached the view, so the next is paced against it.
     @ObservationIgnored fileprivate var published: ContinuousClock.Instant?
-    /// Temporary, for the frame-rate work: prints to the device console once a second.
-    @ObservationIgnored fileprivate static var frames = FrameLog()
 
-    /// Trial for #10: the libghostty-vt parser, chosen in Settings. It parses about twelve
-    /// times faster than the shipping engine but does not carry history navigation, selection
-    /// text, or Kitty graphics yet, so it stays off by default.
+    /// Trial for #10: the libghostty-vt parser, chosen in Settings. Measured in release it
+    /// parses about fourteen times faster than the shipping engine, which turned out not to
+    /// reach the screen — output is bounded by the SSH window, not by parsing. What it does
+    /// change is what gets drawn: repaints arrive without the flashes the current engine
+    /// leaves behind. It stays off by default until the trial says otherwise.
     static var experimentalEngineFactory: TerminalPipeline.EngineFactory? {
         guard UserDefaults.standard.string(forKey: "terminal.engine") == "ghostty" else { return nil }
         return { columns, rows, _ in GhosttyEngine(columns: columns, rows: rows) }
@@ -294,7 +216,6 @@ final class ConnectionModel: Identifiable {
             outputGate = gate
             transport.onData = { [pipeline = terminal] data in
                 guard gate.isOpen else { return }
-                inputLog.record(data.count)
                 pipeline.feed(data)
             }
             transport.onDisconnect = { [weak self] reason in
@@ -729,16 +650,29 @@ final class ConnectionModel: Identifiable {
     /// Draw only what the parser has finished, which for a program that pauses between frames
     /// means whole frames. A stream that never pauses would otherwise never draw, so the
     /// deadline gives up waiting and draws whatever is there.
+    /// A shell sending an image writes megabytes without touching a cell, and the parser asks
+    /// for a repaint on every batch of it. Publishing a grid identical to the one on screen
+    /// costs the view an update and the renderer a frame to show the same picture, so the
+    /// unchanged ones stop here.
+    private func publish(_ value: TerminalSnapshot) {
+        if let previous = snapshot, value.damageRows.isEmpty,
+           value.columns == previous.columns, value.rows == previous.rows,
+           value.cursor == previous.cursor, value.images == previous.images,
+           value.scrollbackOffset == previous.scrollbackOffset {
+            return
+        }
+        snapshot = value
+    }
+
     private func scheduleSnapshot() {
         guard isVisible, !isInBackground, snapshotTask == nil else { return }
-        let started = ContinuousClock.now
         snapshotTask = Task { [weak self] in
             // The screen can show about 60 snapshots a second and the parser finishes work far
             // more often than that. Publishing every time does not put more on the screen: the
             // extra ones pay for update(_:) and are replaced before they are drawn, and the
             // damage they carried is dropped rather than accumulated, which leaves the renderer
             // redrawing more than it should. Hold publication to one display frame.
-            if let previous = await self?.published {
+            if let previous = self?.published {
                 let due = previous.advanced(by: Self.presentationInterval)
                 if ContinuousClock.now < due { try? await Task.sleep(until: due, clock: .continuous) }
                 guard !Task.isCancelled else { return }
@@ -748,13 +682,13 @@ final class ConnectionModel: Identifiable {
                 guard !Task.isCancelled, let self, self.isVisible, !self.isInBackground else { return }
                 if let value = await self.terminal.snapshotIfDrained() {
                     guard !Task.isCancelled, self.isVisible, !self.isInBackground else { return }
-                    self.snapshot = value
+                    self.publish(value)
                     break
                 }
                 guard ContinuousClock.now < deadline else {
                     let value = await self.terminal.snapshot()
                     guard !Task.isCancelled, self.isVisible, !self.isInBackground else { return }
-                    self.snapshot = value
+                    self.publish(value)
                     break
                 }
                 // Only wait once the parser is known to be behind. Sleeping first cost every
@@ -762,7 +696,6 @@ final class ConnectionModel: Identifiable {
                 try? await Task.sleep(for: Self.snapshotInterval)
             }
             self?.published = ContinuousClock.now
-            ConnectionModel.frames.record(start: started, snapshot: self?.snapshot)
             self?.snapshotTask = nil
         }
     }

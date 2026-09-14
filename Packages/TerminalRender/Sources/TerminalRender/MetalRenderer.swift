@@ -30,8 +30,6 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
     private let glyph: any MTLRenderPipelineState
     private let imagePipeline: any MTLRenderPipelineState
     private let inFlight = DispatchSemaphore(value: 3)
-    /// Temporary, for the frame-rate work; prints to the device console once a second.
-    private var drawLog = DrawLog()
     private var frames = [Frame(), Frame(), Frame()]
     private var frameIndex = 0
     private var rows: [Row] = []
@@ -130,9 +128,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
 
     func draw(in view: MTKView) {
         guard isActive, view.window != nil, view.drawableSize.width > 0, view.drawableSize.height > 0 else { return }
-        let entered = ContinuousClock.now
         guard inFlight.wait(timeout: .now()) == .success else {
-            drawLog.record(start: entered, starved: true)
             view.setNeedsDisplay()
             return
         }
@@ -150,7 +146,6 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         encoder.endEncoding()
         command.present(drawable)
         command.commit()
-        drawLog.record(start: entered, starved: false)
     }
 
     /// Encodes the same terminal frame into either an MTKView or an offscreen render target.
@@ -369,30 +364,3 @@ private extension UInt32 {
     }
 }
 
-
-/// Temporary instrumentation for the frame-rate work. `draw` is the CPU time spent encoding a
-/// frame; `starved` counts the calls that found every buffered frame still in flight and gave
-/// up. Remove once the question is settled.
-private struct DrawLog {
-    private var drawn = 0
-    private var starved = 0
-    private var encode = 0.0
-    private var window = ContinuousClock.now
-
-    mutating func record(start: ContinuousClock.Instant, starved isStarved: Bool) {
-        let now = ContinuousClock.now
-        if isStarved { starved += 1 } else {
-            drawn += 1
-            encode += Double(start.duration(to: now).components.attoseconds) / 1e15
-        }
-        let elapsed = Double(window.duration(to: now).components.seconds) * 1000
-            + Double(window.duration(to: now).components.attoseconds) / 1e15
-        guard elapsed >= 1000 else { return }
-        print(String(format: "DRAWS %.1f/s encode=%.1fms starved=%d",
-                     Double(drawn) * 1000 / elapsed, encode / Double(max(drawn, 1)), starved))
-        drawn = 0
-        starved = 0
-        encode = 0
-        window = now
-    }
-}

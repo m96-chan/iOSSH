@@ -29,7 +29,7 @@ struct SettingsView: View {
                         Text("SwiftTerm").tag("swiftterm")
                         Text("libghostty-vt (trial)").tag("ghostty")
                     }
-                    Text("The trial parser is about twelve times faster and has no history scrolling, selection copy, or images yet. Reopen a session to apply.")
+                    Text("The trial parser draws block graphics and repaints without the flashes the current one leaves behind. Reopen a session to apply.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                     Picker("Font", selection: $fontName) {

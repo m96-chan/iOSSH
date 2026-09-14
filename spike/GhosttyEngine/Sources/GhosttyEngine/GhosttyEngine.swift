@@ -3,10 +3,10 @@ import GhosttyVt
 import TerminalCore
 
 /// A `TerminalEngine` backed by libghostty-vt, for comparing against the shipping SwiftTerm
-/// engine (#10). It covers what the comparison needs — parsing, the visible grid with its
-/// colours and attributes, the cursor, and resizing — and deliberately not scrollback
-/// navigation, selection text, or Kitty graphics, which stay with `SwiftTermEngine` until the
-/// comparison decides whether to go further.
+/// engine (#10). It covers parsing, the visible grid with its colours and attributes, the
+/// cursor, resizing, scrollback navigation, selection text, and Kitty placements whose pixels
+/// arrive uncompressed — virtual placements and compressed payloads still stay with
+/// `SwiftTermEngine`.
 @TerminalParserActor public final class GhosttyEngine: TerminalEngine {
     public var onOutput: (@TerminalParserActor (Data) -> Void)?
     public var onNeedsDisplay: (@TerminalParserActor () -> Void)?
