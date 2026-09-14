@@ -99,10 +99,22 @@ jobs:
         run: |
           brew install zig
           scripts/build_ghostty_vt.sh
+      # A concrete simulator, not `generic/platform=iOS Simulator`. AppTests reaches into the
+      # app with `@testable import iOSSH`, and against the generic destination that fails with
+      # "unable to resolve module dependency: 'iOSSH'" — the generic destination builds for more
+      # than one architecture and leaves the test host's module unresolvable.
+      #
+      # It is not booted and it is not the device the tests run on: every simulator on a runner
+      # is the same architecture, so one .xctestrun built here runs on both idioms.
+      - name: Pick a simulator to build against
+        id: destination
+        run: |
+          udid=$(xcrun simctl list devices available --json | python3 -c 'import json,sys; devices=json.load(sys.stdin)["devices"]; print(next(d["udid"] for runtime in sorted(devices, reverse=True) if "iOS" in runtime for d in devices[runtime] if d["isAvailable"] and d["name"].startswith("iPhone")))')
+          echo "udid=$udid" >> "$GITHUB_OUTPUT"
       - name: Build the app and its test bundles
         run: |
           xcodebuild -project iOSSH.xcodeproj -scheme iOSSH \
-            -destination 'generic/platform=iOS Simulator' \
+            -destination "platform=iOS Simulator,id=${{ steps.destination.outputs.udid }}" \
             -derivedDataPath build/DerivedData -skipPackagePluginValidation build-for-testing
       # The bundled notices are what the store submission ships, and nothing else compares them
       # against the dependencies the app actually links. The checkouts are the ones the build
