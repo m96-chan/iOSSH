@@ -76,28 +76,60 @@ jobs:
       - name: Test SSH, terminal and Ghostty packages
         if: steps.scope.outputs.build == 'true'
         run: make test
-      - name: Build iPhone and iPad app
+      # Built once for both destinations. Splitting it was costing two extra builds: a
+      # destination change gives Xcode a different build description, so `generic/platform=iOS
+      # Simulator` and then each concrete simulator each rebuilt from scratch. On the last full
+      # run that was 3m56s for the app and another 3m45s before the iPad ran its first test,
+      # neither of which produced anything the previous build had not.
+      #
+      # The `generic` destination is gone with it. These two cover the same compilation; what
+      # they do not cover is a simulator architecture no runner has, which is not a thing this
+      # project ships to.
+      - name: Prepare the iPhone and iPad simulators
+        id: simulators
         if: steps.scope.outputs.build == 'true'
-        run: make build
+        run: |
+          for family in iPhone iPad; do
+            udid=$(scripts/prepare_simulator.sh "$family")
+            echo "$family=$udid" >> "$GITHUB_OUTPUT"
+          done
+      - name: Build the app and its test bundles for both idioms
+        if: steps.scope.outputs.build == 'true'
+        run: |
+          xcodebuild -project iOSSH.xcodeproj -scheme iOSSH \
+            -destination "platform=iOS Simulator,id=${{ steps.simulators.outputs.iPhone }}" \
+            -destination "platform=iOS Simulator,id=${{ steps.simulators.outputs.iPad }}" \
+            -derivedDataPath build/DerivedData -skipPackagePluginValidation build-for-testing
       # The bundled notices are what the store submission ships, and nothing else compares them
-      # against the dependencies the app actually links. The checkouts are the ones make build
-      # just resolved.
+      # against the dependencies the app actually links. The checkouts are the ones the build
+      # above just resolved, and this runs before the tests so a stale notice is not thirty
+      # minutes away from being reported.
       - name: Check bundled third-party notices
         if: steps.scope.outputs.build == 'true'
         run: python3 scripts/generate_third_party_notices.py --checkouts build/DerivedData/SourcePackages/checkouts --check
       # The iPad workspace tests are idiom-gated and skip on an iPhone, so they need a second
-      # destination. A second test invocation rather than a job matrix: the app and its test
-      # bundles are already built in this job, and the matrix would rebuild both from scratch.
-      - name: Test app lifecycle and UI on iPhone and iPad
+      # destination. Both reuse the build above rather than making their own.
+      - name: Test app lifecycle and UI on iPhone
         if: steps.scope.outputs.build == 'true'
         run: |
-          # Both destinations boot a device, and a failing xcodebuild would otherwise leave them
-          # running for the rest of the job, so the trap covers the failure path too.
-          trap 'xcrun simctl shutdown all >/dev/null 2>&1 || true' EXIT
-          for family in iPhone iPad; do
-            udid=$(scripts/prepare_simulator.sh "$family")
-            xcodebuild -project iOSSH.xcodeproj -scheme iOSSH -destination "platform=iOS Simulator,id=$udid" -derivedDataPath build/DerivedData -resultBundlePath "build/CI-$family.xcresult" -skipPackagePluginValidation -parallel-testing-enabled NO test
-          done
+          xcodebuild -project iOSSH.xcodeproj -scheme iOSSH \
+            -destination "platform=iOS Simulator,id=${{ steps.simulators.outputs.iPhone }}" \
+            -derivedDataPath build/DerivedData -resultBundlePath build/CI-iPhone.xcresult \
+            -skipPackagePluginValidation -parallel-testing-enabled NO test-without-building
+      # Runs even when the iPhone failed: the build is already paid for, and one run that
+      # reports both idioms is one round trip instead of two.
+      - name: Test app lifecycle and UI on iPad
+        if: always() && steps.scope.outputs.build == 'true'
+        run: |
+          xcodebuild -project iOSSH.xcodeproj -scheme iOSSH \
+            -destination "platform=iOS Simulator,id=${{ steps.simulators.outputs.iPad }}" \
+            -derivedDataPath build/DerivedData -resultBundlePath build/CI-iPad.xcresult \
+            -skipPackagePluginValidation -parallel-testing-enabled NO test-without-building
+      # Both destinations stay booted across the steps above, so this is what shuts them down —
+      # including when a step above failed and left them running.
+      - name: Shut the simulators down
+        if: always()
+        run: xcrun simctl shutdown all >/dev/null 2>&1 || true
       - name: Upload test results and screenshots
         if: always() && steps.scope.outputs.build == 'true'
         uses: actions/upload-artifact@v7
