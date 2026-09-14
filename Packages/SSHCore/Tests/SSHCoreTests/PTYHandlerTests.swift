@@ -101,3 +101,23 @@ struct PTYHandlerTests {
         #expect(received == chunk.count * 1024)
     }
 }
+
+/// #21: a shell left without a locale makes macOS `ls` replace the bytes of a Japanese filename
+/// with question marks, and a server whose AcceptEnv omits LANG drops the polite request for one.
+@Suite struct LoginShellCommandTests {
+    @Test func asksForAPlainShellWhenThereIsNothingToSet() {
+        #expect(PTYHandler.loginShellCommand([:]) == nil)
+    }
+
+    @Test func carriesTheVariablesIntoALoginShell() {
+        #expect(PTYHandler.loginShellCommand(["LANG": "ja_JP.UTF-8"])
+            == "exec env LANG='ja_JP.UTF-8' \"${SHELL:-/bin/sh}\" -l")
+    }
+
+    @Test func quotesAValueThatWouldOtherwiseRunACommand() {
+        // The shell sees one quoted word: the quote that would have closed it is escaped, so
+        // what follows stays a value rather than becoming the next command.
+        #expect(PTYHandler.loginShellCommand(["LANG": "x'; rm -rf /; '"])
+            == "exec env LANG='x'\\''; rm -rf /; '\\''' \"${SHELL:-/bin/sh}\" -l")
+    }
+}

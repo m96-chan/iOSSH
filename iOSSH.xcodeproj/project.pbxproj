@@ -39,6 +39,7 @@
 		C7969DFDF165C28DBB2963D6 /* TerminalFontLibraryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CB0BC27787CF8C4490CD014 /* TerminalFontLibraryTests.swift */; };
 		D18D09E95C6FB0D022EE139E /* TerminalInputTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3481CB020510DBA908C3300 /* TerminalInputTests.swift */; };
 		D341BFE2D1EA934CE964B2A0 /* TerminalBlockGraphicsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E6B331D739759053C031371 /* TerminalBlockGraphicsTests.swift */; };
+		DA3BD22D10F20CA7980312CF /* HostLocale.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4B0C7CDF9DE5B934312BB48 /* HostLocale.swift */; };
 		DF146B154BAA8213E7B1B8E9 /* Import Tailscale Hosts.shortcut in Resources */ = {isa = PBXBuildFile; fileRef = 63B7BC0CF805FC4D8AF1B475 /* Import Tailscale Hosts.shortcut */; };
 		E299A2FA4BEE670E0E2B52B9 /* TailscaleHostImportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEA5544B29897C3F1E2591D5 /* TailscaleHostImportTests.swift */; };
 		E70691CE9ADDC45D2BEB9E91 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F9211EEB2F9FE7191DDA0A91 /* Assets.xcassets */; };
@@ -101,6 +102,7 @@
 		BF3D87F64507E681986AEBE8 /* TailscaleImportInbox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TailscaleImportInbox.swift; sourceTree = "<group>"; };
 		C11265FA4D2A5C381E689173 /* TerminalViewportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalViewportTests.swift; sourceTree = "<group>"; };
 		C3481CB020510DBA908C3300 /* TerminalInputTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalInputTests.swift; sourceTree = "<group>"; };
+		C4B0C7CDF9DE5B934312BB48 /* HostLocale.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostLocale.swift; sourceTree = "<group>"; };
 		CEA5544B29897C3F1E2591D5 /* TailscaleHostImportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TailscaleHostImportTests.swift; sourceTree = "<group>"; };
 		DC54B35541FEAEB0228D113C /* KeyboardResizeUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardResizeUITests.swift; sourceTree = "<group>"; };
 		DDCDC6BD4F31DC56C1FB8334 /* iOSSHTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = iOSSHTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -198,6 +200,7 @@
 				FE7715EA1A26DB00BC41EB0C /* ConnectionModel.swift */,
 				E782EE91A91CF8D57B4C2647 /* HostEditorView.swift */,
 				3CE3DBF767613DEA56210592 /* HostListView.swift */,
+				C4B0C7CDF9DE5B934312BB48 /* HostLocale.swift */,
 				731526C7B108797D5F45E403 /* HostRecord.swift */,
 				A65499EC7081306038E361E1 /* Info.plist */,
 				A820ABD787EFF5FD17D36CD0 /* iOSSHApp.swift */,
@@ -395,6 +398,7 @@
 				706F45A9C7157D1CA3EA654C /* ConnectionModel.swift in Sources */,
 				B3F89ED2F0A6C38B69BAFC31 /* HostEditorView.swift in Sources */,
 				F009168C381D399C08D1F85C /* HostListView.swift in Sources */,
+				DA3BD22D10F20CA7980312CF /* HostLocale.swift in Sources */,
 				98D885FE7E950703592F9A9C /* HostRecord.swift in Sources */,
 				AB1D90C2A88DAC5B0A78F4AE /* SettingsView.swift in Sources */,
 				BE99510FCB268470B6D7B28F /* TailscaleAuthentication.swift in Sources */,

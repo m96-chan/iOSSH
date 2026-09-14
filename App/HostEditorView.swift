@@ -12,6 +12,7 @@ struct HostEditorView: View {
     @State private var username: String
     @State private var authentication: String
     @State private var terminalType: String
+    @State private var locale: String
     @State private var password = ""
     @State private var privateKey = ""
     @State private var passphrase = ""
@@ -26,6 +27,7 @@ struct HostEditorView: View {
         _username = State(initialValue: host?.username ?? "")
         _authentication = State(initialValue: host?.authentication ?? "password")
         _terminalType = State(initialValue: host?.terminalType ?? "xterm-256color")
+        _locale = State(initialValue: host?.locale ?? "")
     }
 
     var body: some View {
@@ -83,8 +85,20 @@ struct HostEditorView: View {
                 Section {
                     TextField("TERM", text: $terminalType)
                         .autocorrectionDisabled().textInputAutocapitalization(.never)
+                    Picker("Locale", selection: $locale) {
+                        Text("Not set").tag("")
+                        ForEach(HostLocale.choices, id: \.self) { choice in
+                            Text(choice).tag(choice)
+                        }
+                        // A value typed before this was a list, or restored from a host saved
+                        // elsewhere, stays selectable rather than silently reverting to unset.
+                        if !locale.isEmpty, !HostLocale.choices.contains(locale) {
+                            Text(locale).tag(locale)
+                        }
+                    }
+                    .accessibilityIdentifier("hostLocale")
                 } header: { Text("Terminal") } footer: {
-                    Text("Use xterm-256color for broad compatibility. Kitty graphics work without advertising full xterm-kitty compatibility.")
+                    Text("Use xterm-256color for broad compatibility. Kitty graphics work without advertising full xterm-kitty compatibility.\n\nLocale is sent as LANG. Leave it empty to send nothing. A shell left without one shows non-ASCII filenames as question marks, and a locale the host has not installed makes it complain on every command, so the right value depends on the host: ja_JP.UTF-8 suits macOS, C.UTF-8 suits most Linux.")
                 }
                 if let errorMessage {
                     Section { Text(errorMessage).foregroundStyle(.red).accessibilityIdentifier("hostSaveError") }
@@ -122,7 +136,7 @@ struct HostEditorView: View {
                 || (authentication == "privateKey" && !trim(privateKey).isEmpty)
             try SSHHost(name: trim(name), hostname: trim(hostname), port: Int(port) ?? 0,
                         username: trim(username), authentication: SSHAuthentication(rawValue: authentication) ?? .password,
-                        terminalType: trim(terminalType)).validate()
+                        terminalType: trim(terminalType), locale: trim(locale)).validate()
             if hasCredential {
                 let credential = SSHCredential(password: authentication == "password" ? password : nil,
                                                privateKey: authentication == "privateKey" ? privateKey : nil,
@@ -138,6 +152,7 @@ struct HostEditorView: View {
             record.username = trim(username)
             record.authentication = authentication
             record.terminalType = trim(terminalType)
+            record.locale = trim(locale)
             if host == nil { context.insert(record) }
             try context.save()
             password = ""
