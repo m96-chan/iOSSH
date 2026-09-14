@@ -93,8 +93,16 @@ public final class SSHSession {
                     // Citadel supplies the authentication delegate and key parsing. Installing the
                     // transport here avoids its fixed ten-second timeout during the host trust UI.
                     do {
+                        // NIOSSH gives a child channel a receive window equal to this, and tops it
+                        // up only once half of it has been consumed, so the shell can have about
+                        // half this much in flight at a time. At the 128KB default that put a
+                        // ceiling of roughly 8MB/s on output here — window over round trip — no
+                        // matter how fast the terminal read, parsed or drew it. OpenSSH uses 2MB.
+                        var configuration = SSHClientConfiguration(userAuthDelegate: authentication(),
+                                                                   serverAuthDelegate: validator)
+                        configuration.maximumPacketSize = 1 << 21
                         try channel.pipeline.syncOperations.addHandlers(
-                            NIOSSHHandler(role: .client(.init(userAuthDelegate: authentication(), serverAuthDelegate: validator)),
+                            NIOSSHHandler(role: .client(configuration),
                                           allocator: channel.allocator,
                                           inboundChildChannelInitializer: { child, _ in
                                               child.eventLoop.makeFailedFuture(SSHSessionError.requestRejected)

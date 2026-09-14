@@ -33,16 +33,33 @@ extension SSHSession: ConnectionTransport {}
     private var published: ContinuousClock.Instant?
     private var window = ContinuousClock.now
 
-    mutating func record(start: ContinuousClock.Instant) {
+    private var damaged = 0
+    private var full = 0
+    private var empty = 0
+    private var images = 0
+
+    mutating func record(start: ContinuousClock.Instant, snapshot: TerminalSnapshot?) {
         let now = ContinuousClock.now
+        if let snapshot {
+            let rows = snapshot.damageRows.count
+            damaged += rows
+            if rows == 0 { empty += 1 }
+            if snapshot.rows > 0, rows >= snapshot.rows { full += 1 }
+            images += snapshot.images.count
+        }
         frames += 1
         commit += Self.milliseconds(start.duration(to: now))
         if let published { gap += Self.milliseconds(published.duration(to: start)) }
         published = now
         let elapsed = Self.milliseconds(window.duration(to: now))
         guard elapsed >= 1000 else { return }
-        print(String(format: "FRAMES %.1f/s commit=%.1fms gap=%.1fms",
-                     Double(frames) * 1000 / elapsed, commit / Double(frames), gap / Double(frames)))
+        print(String(format: "FRAMES %.1f/s commit=%.1fms gap=%.1fms rows=%.1f full=%d empty=%d images=%.1f",
+                     Double(frames) * 1000 / elapsed, commit / Double(frames), gap / Double(frames),
+                     Double(damaged) / Double(frames), full, empty, Double(images) / Double(frames)))
+        damaged = 0
+        full = 0
+        empty = 0
+        images = 0
         frames = 0
         commit = 0
         gap = 0
@@ -745,7 +762,7 @@ final class ConnectionModel: Identifiable {
                 try? await Task.sleep(for: Self.snapshotInterval)
             }
             self?.published = ContinuousClock.now
-            ConnectionModel.frames.record(start: started)
+            ConnectionModel.frames.record(start: started, snapshot: self?.snapshot)
             self?.snapshotTask = nil
         }
     }
