@@ -103,6 +103,17 @@ Tap the terminal to show the keyboard. The accessory row includes Ctrl, Esc, Tab
 
 The default font is bundled **HackGen Console NF**, at **8.5 pt on iPhone** and **9 pt on iPad**, with Japanese and Nerd Font symbols for Starship. Shell output assumes 80 columns, and a portrait iPhone is the narrowest grid the app draws: 8.5 pt fits 83 columns into both 375 points at 2× and 390 points at 3×, while 9 pt fits only 78. Cell widths round up to a device pixel, so the font size steps by half a point in Settings; whole points would jump straight past the size that keeps 80 columns. An iPad is wide enough at the larger size. Saved font sizes are retained. Rows use the font's natural line height rounded to device pixels, without extra point-based leading that elongates block art at small sizes. Missing characters fall back explicitly to bundled **Noto Sans CJK JP** Regular/Bold, including behind imported fonts; emoji retain the system color-emoji fallback. Latin and Japanese advances use a 1:2 ratio. Oversized symbol ink is fitted within the cell span reported by the terminal parser; Powerline separators meet the cell edges. Settings previews the selected font, shows the configured Japanese fallback, and includes all bundled font licenses. Server-side prompt width settings must still match the terminal's Unicode widths.
 
+### Parse throughput
+
+VT parsing is the slowest stage of the output pipeline. `scripts/vt_throughput_bench.c` feeds a full-screen truecolor repaint — 105x95 cells, every cell an upper-half block with a foreground and a background colour, about 384 KB — through libghostty-vt; the same bytes go through `SwiftTermEngine` in a release build of the TerminalCore tests. Measured on an Apple silicon Mac:
+
+| Engine | Per frame | Throughput |
+| --- | --- | --- |
+| SwiftTerm (shipping) | 15.5 ms | 24 MB/s |
+| libghostty-vt | 1.69 ms | 228 MB/s |
+
+The harness is standalone C against the library's own header, so it measures the parser without the app, the engine wrapper, or a snapshot in the way. `scripts/build_ghostty_vt.sh` produces the library it links against; the build comment in the file carries the exact commands.
+
 Wide-character continuation cells inherit the leading cell's resolved colors and visual attributes. This compensates for SwiftTerm 1.20.0 assigning a stale default background to those cells, which produced white rectangles over the right half of Japanese text. GPU tests compare complete frames against independent glyph rasters, including fullwidth spaces and following ASCII text.
 
 Solid block elements, including half blocks, eighths, and quadrants, fill cell-aligned pixel rectangles. Complementary shapes share the same rounded boundary even at odd pixel dimensions; font bearings, italic transforms, and antialiasing cannot create seams in ANSI art. Shade patterns and other characters retain font rendering.

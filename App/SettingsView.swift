@@ -3,6 +3,9 @@ import TerminalRender
 import UniformTypeIdentifiers
 
 struct SettingsView: View {
+    /// False where the sheet belongs to one terminal. The parser applies to every connection,
+    /// so offering it there invites the reading that this terminal has its own.
+    var showsTerminalEngine = true
     @Environment(\.dismiss) private var dismiss
     @AppStorage("terminal.fontSize") private var fontSize = Double(TerminalConfiguration.initialFontSize)
     @AppStorage("terminal.theme") private var theme = "dark"
@@ -25,13 +28,6 @@ struct SettingsView: View {
                     // upright iPhone; whole points there jump straight past it to 78 columns.
                     Stepper("Font size: \(fontSize.formatted(.number.precision(.fractionLength(0...1)))) pt",
                             value: $fontSize, in: 8...32, step: 0.5)
-                    Picker("Parser", selection: $engine) {
-                        Text("SwiftTerm").tag("swiftterm")
-                        Text("libghostty-vt (trial)").tag("ghostty")
-                    }
-                    Text("The trial parser draws block graphics and repaints without the flashes the current one leaves behind. Reopen a session to apply.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
                     Picker("Font", selection: $fontName) {
                         Text("\(TerminalFont.displayName) (Default)").tag(TerminalFont.postScriptName)
                         ForEach(fontLibrary.fonts) { font in
@@ -83,6 +79,21 @@ struct SettingsView: View {
                     Text("Imported fonts")
                 } footer: {
                     Text("Use monospaced .ttf or .otf files, up to 32 MB each. Fonts are copied into iOSSH. Missing Japanese glyphs use Noto Sans CJK JP. Removing the selected font restores HackGen Console NF.")
+                }
+                // Not an appearance choice, and not one anybody revisits: it decides which
+                // implementation reads the bytes. It sits on its own so it does not read as
+                // something to adjust alongside the theme.
+                if showsTerminalEngine {
+                    Section {
+                        Picker("Parser", selection: $engine) {
+                            Text("SwiftTerm").tag("swiftterm")
+                            Text("libghostty-vt (trial)").tag("ghostty")
+                        }
+                    } header: {
+                        Text("Terminal engine")
+                    } footer: {
+                        Text("The trial parser draws block graphics and repaints without the flashes the current one leaves behind. It applies to every connection. Terminals that are already open keep the parser they started with until they are closed and reopened.")
+                    }
                 }
                 Section("Using the terminal") {
                     Label("Swipe vertically to browse scrollback.", systemImage: "hand.draw")

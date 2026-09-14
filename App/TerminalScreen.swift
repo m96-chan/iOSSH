@@ -38,7 +38,10 @@ struct TerminalScreen: View {
         .preferredColorScheme(isWorkspace ? nil : themeName == "light" ? .light : .dark)
         .sheet(item: $activeSheet, onDismiss: sheetDidDismiss) { item in
             switch item.content {
-            case .settings: SettingsView()
+            // Reached from a single terminal, so it leaves out the parser: an app-wide choice
+            // offered here reads as this terminal's own, and the one already running cannot
+            // change anyway.
+            case .settings: SettingsView(showsTerminalEngine: false)
             case .tailscaleImport: TailscaleImportView()
             case .credential(let connection, let requestID, let attemptID):
                 CredentialPromptView(host: connection.host, later: isWorkspace ? {
@@ -113,6 +116,12 @@ struct TerminalScreen: View {
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .padding(.horizontal, 6)
                 .padding(.top, 6)
+                // SwiftUI insets by what `keyboardLayoutGuide` reports, which with a hardware
+                // keyboard is the accessory row plus the safe area beneath it — the surface then
+                // ends a safe area above the accessory it is avoiding, wasting a row (#14). The
+                // view clamps its own viewport from the keyboard and accessory rectangles it
+                // already tracks, so let it, and take the whole height to clamp from.
+                .ignoresSafeArea(.keyboard)
         } else {
             terminal.overlay(alignment: .top) {
                 VStack(spacing: 8) {
@@ -123,6 +132,7 @@ struct TerminalScreen: View {
                         .padding(.horizontal, 10)
                 }
             }
+            .ignoresSafeArea(.keyboard)
         }
     }
 

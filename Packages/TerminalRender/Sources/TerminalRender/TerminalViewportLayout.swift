@@ -7,7 +7,8 @@ enum TerminalViewportLayout {
                               keyboardFrame: CGRect?, accessoryFrame: CGRect?) -> CGRect {
         guard bounds.width > 0, bounds.height > 0 else { return .zero }
         let tolerance: CGFloat = 1
-        var bottom = max(bounds.minY, bounds.maxY - max(0, safeAreaBottom))
+        let safeBottom = max(bounds.minY, bounds.maxY - max(0, safeAreaBottom))
+        var bottom = safeBottom
         if let keyboardFrame, !keyboardFrame.isNull, keyboardFrame.width > 0,
            keyboardFrame.maxY >= bounds.maxY - tolerance {
             bottom = min(bottom, max(bounds.minY, min(bounds.maxY, keyboardFrame.minY)))
@@ -19,7 +20,18 @@ enum TerminalViewportLayout {
             // A live full-width accessory is authoritative even while the keyboard
             // guide catches up after foregrounding. Narrow floating keyboards leave
             // the grid alone; full-width undocked bars still obscure complete rows.
-            bottom = min(bottom, max(bounds.minY, accessoryFrame.minY))
+            let accessoryTop = max(bounds.minY, min(bounds.maxY, accessoryFrame.minY))
+            if let keyboardFrame, !keyboardFrame.isNull, keyboardFrame.width > 0,
+               accessoryFrame.maxY >= keyboardFrame.maxY - tolerance,
+               accessoryFrame.minY >= keyboardFrame.minY {
+                // The accessory fills the bottom of the keyboard region, so that region is
+                // the bar plus the inset beneath it and only the bar obscures a row. Taking
+                // the guide's top instead would surrender that inset, a whole row on an iPad
+                // with a hardware keyboard attached (#14).
+                bottom = min(safeBottom, accessoryTop)
+            } else {
+                bottom = min(bottom, accessoryTop)
+            }
         }
         return CGRect(x: bounds.minX, y: bounds.minY, width: bounds.width, height: bottom - bounds.minY)
     }
