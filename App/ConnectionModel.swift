@@ -133,7 +133,22 @@ final class ConnectionModel: Identifiable {
     /// leaves behind. It stays off by default until the trial says otherwise.
     static var experimentalEngineFactory: TerminalPipeline.EngineFactory? {
         guard UserDefaults.standard.string(forKey: "terminal.engine") == "ghostty" else { return nil }
-        return { columns, rows, _ in GhosttyEngine(columns: columns, rows: rows) }
+        return { columns, rows, imageBudget in
+            // The budget is the workspace's only ceiling on decoded image memory and its only
+            // answer to a memory warning. Dropping it here left the trial engine outside both
+            // (#26): it kept its own cache, counted entries rather than bytes, and a memory
+            // warning walked a table its images were never in.
+            //
+            // A refusal from the library is not a state to continue in. The engine used to
+            // carry on without a terminal, discarding output and reporting a blank grid, which
+            // reads on screen as a connection that hung (#28). Falling back gives the person a
+            // terminal that works; it is a silent fallback only because this app has no logging
+            // facility to say so in.
+            if let engine = GhosttyEngine(columns: columns, rows: rows, imageBudget: imageBudget) {
+                return engine
+            }
+            return SwiftTermEngine(columns: columns, rows: rows, imageBudget: imageBudget)
+        }
     }
 
     init(host: SSHHost, dependencies: Dependencies = .live, imageBudget: TerminalImageBudget? = nil) {

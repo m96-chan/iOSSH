@@ -20,9 +20,11 @@ struct KittyGraphicsContext {
     let alternate: Bool
 }
 
-/// Direct transfers only. No file, shared-memory, compression or animation
-/// paths are delegated to SwiftTerm's broader implementation.
-@TerminalParserActor final class KittyGraphicsStore {
+/// Direct transfers only: file, shared-memory and animation payloads are refused, and no
+/// path here is delegated to SwiftTerm's broader implementation. A `o=z` payload is inflated
+/// (#18) — refusing it drew nothing at all for the case a sender compresses for, which is a
+/// large image.
+@TerminalParserActor final class KittyGraphicsStore: TerminalImageBudgetOwner {
     private struct Image {
         let data: Data
         let width, height: Int
@@ -113,9 +115,9 @@ struct KittyGraphicsContext {
             else { if !more { discardContinuation = false }; return }
         }
         let original = pending?.control ?? control
-        guard original["t", default: "d"] == "d", original["o"] == nil,
+        guard original["t", default: "d"] == "d", (original["o"] ?? "z") == "z",
               original["P"] == nil, original["Q"] == nil else {
-            respond(original, "ENOTSUP: only direct uncompressed placements are supported", output)
+            respond(original, "ENOTSUP: only direct placements are supported", output)
             pending = nil; discardContinuation = more; return
         }
         guard payload.count <= 4096, let decoded = Data(base64Encoded: Data(payload)),
@@ -128,7 +130,16 @@ struct KittyGraphicsContext {
         if more { return }
         guard let transfer = pending else { return }
         pending = nil
-        guard let image = decode(transfer.bytes, control: transfer.control) else {
+        // `o=z` compresses the payload as a whole, not chunk by chunk, so it is inflated here
+        // where the chunks have been reassembled and before anything reads it as pixels.
+        var bytes = transfer.bytes
+        if transfer.control["o"] == "z" {
+            guard let inflated = KittyZlib.inflate(bytes, maximumBytes: limits.maximumImageBytes) else {
+                respond(transfer.control, "EINVAL: the compressed payload could not be inflated", output); return
+            }
+            bytes = inflated
+        }
+        guard let image = decode(bytes, control: transfer.control) else {
             respond(transfer.control, "EINVAL: invalid image or dimensions exceed limits", output); return
         }
         if transfer.control["a"] == "q" { respond(transfer.control, "OK", output); return }
@@ -174,34 +185,12 @@ struct KittyGraphicsContext {
         width > 0 && height > 0 && width <= limits.maximumDimension && height <= limits.maximumDimension && width * height <= limits.maximumImageBytes / 4
     }
 
+    /// The decode itself lives in `KittyPNG`, shared with the libghostty-vt engine, which has
+    /// to hand the same function to the library as a callback to accept PNG at all (#18).
     private func decodePNG(_ data: Data) -> Image? {
-        let signature: [UInt8] = [137, 80, 78, 71, 13, 10, 26, 10]
-        guard data.count >= 24, data.prefix(8).elementsEqual(signature),
-              data[12..<16].elementsEqual("IHDR".utf8) else { return nil }
-        func bigEndian(_ offset: Int) -> Int { data[offset..<(offset + 4)].reduce(0) { ($0 << 8) | Int($1) } }
-        let width = bigEndian(16), height = bigEndian(20)
-        // Validate the uncompressed size before asking ImageIO to allocate anything.
-        guard dimensionsAllowed(width, height),
-              let source = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary),
-              let cgImage = CGImageSourceCreateImageAtIndex(source, 0, [kCGImageSourceShouldCache: false] as CFDictionary),
-              cgImage.width == width, cgImage.height == height else { return nil }
-        var rgba = Data(count: width * height * 4)
-        let succeeded = rgba.withUnsafeMutableBytes { raw -> Bool in
-            guard let context = CGContext(data: raw.baseAddress, width: width, height: height,
-                                          bitsPerComponent: 8, bytesPerRow: width * 4,
-                                          space: CGColorSpace(name: CGColorSpace.sRGB)!,
-                                          bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue) else { return false }
-            context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
-            let bytes = raw.bindMemory(to: UInt8.self)
-            for index in stride(from: 0, to: raw.count, by: 4) {
-                let alpha = Int(bytes[index + 3])
-                if alpha > 0 && alpha < 255 {
-                    for component in 0..<3 { bytes[index + component] = UInt8(min(255, (Int(bytes[index + component]) * 255 + alpha / 2) / alpha)) }
-                }
-            }
-            return true
-        }
-        return succeeded ? Image(data: rgba, width: width, height: height, tick: 0, revision: 0) : nil
+        guard let decoded = KittyPNG.decode(data, maximumDimension: limits.maximumDimension,
+                                            maximumBytes: limits.maximumImageBytes) else { return nil }
+        return Image(data: decoded.rgba, width: decoded.width, height: decoded.height, tick: 0, revision: 0)
     }
 
     private func place(_ control: [String: String], context: KittyGraphicsContext,
@@ -259,22 +248,17 @@ struct KittyGraphicsContext {
                                           sourceY: placement.sourceY, sourceHeight: placement.sourceHeight)
         }
         for cell in placeholders {
-            guard let prototype = placements.last(where: { $0.virtual && $0.imageID == cell.imageID && (cell.placementID == 0 || $0.placementID == cell.placementID) }),
-                  let image = images[cell.imageID], cell.imageColumn < prototype.columns, cell.imageRow < prototype.rows else { continue }
-            let scale = min(Double(prototype.columns * context.cellWidth) / Double(image.width),
-                            Double(prototype.rows * context.cellHeight) / Double(image.height))
-            let displayedWidth = Double(image.width) * scale, displayedHeight = Double(image.height) * scale
-            let left = Double(cell.imageColumn * context.cellWidth), top = Double(cell.imageRow * context.cellHeight)
-            guard left < displayedWidth, top < displayedHeight else { continue }
-            let width = min(Double(context.cellWidth), displayedWidth - left)
-            let height = min(Double(context.cellHeight), displayedHeight - top)
-            result.append(TerminalImagePlacement(id: cell.imageID, placementID: prototype.placementID,
-                                                 column: cell.column, row: cell.row, columns: 1, rows: 1,
-                                                 zIndex: prototype.zIndex, pixelWidth: image.width, pixelHeight: image.height, rgba: image.data,
-                                                 contentRevision: image.revision,
-                                                 sourceX: left / displayedWidth, sourceY: top / displayedHeight,
-                                                 sourceWidth: width / displayedWidth, sourceHeight: height / displayedHeight,
-                                                 widthFraction: width / Double(context.cellWidth), heightFraction: height / Double(context.cellHeight)))
+            guard let match = placements.last(where: { $0.virtual && $0.imageID == cell.imageID && (cell.placementID == 0 || $0.placementID == cell.placementID) }),
+                  let image = images[cell.imageID] else { continue }
+            let prototype = KittyPlaceholderPrototype(placementID: match.placementID, columns: match.columns,
+                                                      rows: match.rows, zIndex: match.zIndex)
+            // Shared with `GhosttyEngine`, which reaches the same three inputs — the cell, its
+            // virtual placement and the image — through libghostty-vt's own storage (#18).
+            guard let placement = KittyPlaceholderLayout.placement(
+                cell: cell, prototype: prototype, imageWidth: image.width, imageHeight: image.height,
+                rgba: image.data, contentRevision: image.revision,
+                cellWidth: context.cellWidth, cellHeight: context.cellHeight) else { continue }
+            result.append(placement)
         }
         return result.sorted { ($0.zIndex, $0.id, $0.placementID) < ($1.zIndex, $1.id, $1.placementID) }
     }

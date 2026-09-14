@@ -5,24 +5,26 @@ English | [日本語](DEVELOPMENT.jp.md)
 Use Xcode 26 or newer with Swift 6.2 or newer. The app targets iOS 17 and supports iPhone and iPad. The local SSHCore and TerminalCore packages can also be tested on macOS 14 or newer.
 
 ```sh
-brew install xcodegen
+brew install xcodegen zig
 make bootstrap
 open iOSSH.xcodeproj
 ```
 
 Install the Metal compiler component if Xcode reports it missing: `xcodebuild -downloadComponent MetalToolchain`. Choose the iOSSH scheme and a simulator. For a physical device, choose your development team under Signing & Capabilities. Xcode may ask to trust SwiftTerm's build plugin; the pinned plugin generates source-control version metadata. The command-line build opts into that plugin with `-skipPackagePluginValidation` for reproducible unattended builds.
 
-The generated Xcode project is committed, so XcodeGen is only needed for regeneration. Change `project.yml` first, then run `xcodegen generate`. Commit `Package.resolved` files with dependency changes. No Zig toolchain or downloaded XCFramework is needed for the SwiftTerm backend.
+The generated Xcode project is committed, so XcodeGen is only needed for regeneration. Change `project.yml` first, then run `xcodegen generate`. Commit `Package.resolved` files with dependency changes.
+
+Zig is needed to build, not only to trial, libghostty-vt. The app target depends on `GhosttyEngine`, whose binary target resolves to `build/vendor/ghostty-vt.xcframework`, and `build/` is not in the repository — so on a fresh clone package resolution fails until that xcframework exists. `make bootstrap` therefore runs `scripts/build_ghostty_vt.sh` when the xcframework is missing, which clones the pinned Ghostty revision and compiles it with Zig. That takes several minutes; later bootstraps skip it because the directory is already there. Delete `build/vendor/ghostty-vt.xcframework` to rebuild after moving `GHOSTTY_REF` in that script.
 
 ```sh
 make build                         # Unsigned simulator build
-make test                          # SSHCore and TerminalCore unit tests
+make test                          # SSHCore, TerminalCore, and GhosttyEngine unit tests
 make test-ui SIMULATOR='iPhone 17'  # Use an installed simulator's name
 ```
 
 The GitHub Actions workflow runs package tests, a simulator build, and app/UI tests. App unit tests cover connection cancellation, resize during authentication, early remote exit, queued input failures, and host-key decisions. UI tests cover host creation, editing, deletion, validation, settings, terminal startup, and credential cancellation. Use `--ui-testing` as an app launch argument only for tests; it selects an in-memory host store.
 
-The keyboard resize UI test dismisses the English keyboard's first-use QuickPath introduction before operating the accessory row. On a fresh simulator, this system overlay can cover buttons that still appear in the accessibility hierarchy. CI retains the `ios-test-results` artifact for seven days; extract it into a folder named `CI.xcresult` and open it in Xcode to inspect failures and screenshots.
+The keyboard resize UI test dismisses the English keyboard's first-use QuickPath introduction before operating the accessory row. On a fresh simulator, this system overlay can cover buttons that still appear in the accessibility hierarchy. CI retains the `ios-test-results` artifact for seven days. It holds one result bundle per simulator family; extract them into folders named `CI-iPhone.xcresult` and `CI-iPad.xcresult` and open them in Xcode to inspect failures and screenshots.
 
 ## Debug build on a physical device
 
@@ -132,7 +134,7 @@ Keyboard height changes preserve the pixel size of text and images and change th
 
 The terminal protocol keeps the view independent of SwiftTerm. Parser state, terminal buffers, and decoded images are isolated to `TerminalParserActor`; the UI reaches them through `TerminalPipeline`, which runs every command in the order it was submitted and answers queries after the work queued ahead of them. Parsing a full-screen repaint costs tens of milliseconds, so keeping it off the main actor leaves input, layout, and drawing unblocked. Immutable snapshots carry grid cells, damage, cursor state, and images into the renderer. Snapshot publication is coalesced. Metal uses a bounded glyph atlas and triple instance buffers, rebuilding changed rows in each buffer slot. Rendering pauses when inactive.
 
-Kitty images use direct base64 transfers only, RGB/RGBA/PNG, and bounded payload, image, and placement storage. Unsupported commands return protocol errors instead of claiming support. Resize invalidates ordinary placements; the application on the server must redraw them. Unicode placeholder placements follow the text and survive reflow. Keep `TERM=xterm-256color` unless you have independently validated the host application's expectations for another value.
+Kitty images use direct base64 transfers only, RGB/RGBA/PNG, and bounded payload, image, and placement storage. A zlib-compressed (`o=z`) payload is inflated before storage — by libghostty-vt itself on the trial engine, and by `KittyZlib` on the SwiftTerm engine, which stops at the same per-image ceiling the uncompressed path applies, so a small payload cannot ask for gigabytes of pixels. Unsupported commands return protocol errors instead of claiming support. Resize invalidates ordinary placements; the application on the server must redraw them. Unicode placeholder placements follow the text and survive reflow. Keep `TERM=xterm-256color` unless you have independently validated the host application's expectations for another value.
 
 The standalone renderer check `swift Packages/TerminalRender/Scripts/validate-metal.swift` compiles all shader pipelines, renders through the GPU, and checks linear alpha composition.
 
@@ -214,5 +216,5 @@ On 2026-09-12, with Xcode 26.5 / Swift 6.3.2:
 - Physical iPhone/iPad validation of Keychain biometrics, hardware keyboards, background behavior, and international input.
 - `vttest` and `esctest` against a real server, and Neovim/Helix image-plugin compatibility.
 - Instruments measurements for 120Hz, sustained output, memory pressure, and idle power.
-- Display P3 output, parser isolation outside the main actor, and the future libghostty-vt backend.
+- Display P3 output, parser isolation outside the main actor, and the libghostty-vt backend, which now ships as a Settings-selectable trial rather than being future work.
 - Keyboard-interactive authentication, broader key support, and image placement preservation across reflow.
