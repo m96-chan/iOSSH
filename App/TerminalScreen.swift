@@ -38,7 +38,10 @@ struct TerminalScreen: View {
         .preferredColorScheme(isWorkspace ? nil : themeName == "light" ? .light : .dark)
         .sheet(item: $activeSheet, onDismiss: sheetDidDismiss) { item in
             switch item.content {
-            case .settings: SettingsView()
+            // Reached from a single terminal, so it leaves out the parser: an app-wide choice
+            // offered here reads as this terminal's own, and the one already running cannot
+            // change anyway.
+            case .settings: SettingsView(showsTerminalEngine: false)
             case .tailscaleImport: TailscaleImportView()
             case .credential(let connection, let requestID, let attemptID):
                 CredentialPromptView(host: connection.host, later: isWorkspace ? {
