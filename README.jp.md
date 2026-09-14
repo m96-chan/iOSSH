@@ -10,7 +10,7 @@ Kitty Graphics Protocol による画像表示と、Metal による GPU レンダ
 > **Status: 初期実装済み — v1 の受け入れ検証は継続中。**
 > 以下の番号付きセクションは目標とする設計。現在の実装と差分をここに記載する。
 
-iPhone / iPad アプリとして、SwiftData のホスト管理、Keychain の資格情報保存、SSH の PTY セッション、初回ホスト鍵の明示的な承認、再接続、Metal ターミナルを実装。VT 処理には設計上の退避先である **SwiftTerm** を `TerminalEngine` 越しに使用し、libghostty-vt バイナリは不要。
+iPhone / iPad アプリとして、SwiftData のホスト管理、Keychain の資格情報保存、SSH の PTY セッション、初回ホスト鍵の明示的な承認、再接続、Metal ターミナルを実装。VT 処理には設計上の退避先である **SwiftTerm** を `TerminalEngine` 越しに使用し、既定のビルドに libghostty-vt バイナリは不要。libghostty-vt を使う第二のバックエンドは Settings で切り替える試用段階で、`scripts/build_ghostty_vt.sh` がビルドする。
 
 iPad ビルドには専用の [iPad ワークスペース](#ipad-ui) を実装。横幅に適応するホストサイドバー、接続を保持する最大 4 タブ、狭いウィンドウでのセッションメニューを備える。iPhone は単一セッションの接続フローを維持する。iPad 実機での受け入れ確認と連続出力の計測は今後行う。
 
@@ -22,7 +22,7 @@ CoreText のグリフアトラス、Metal のインスタンス描画、24bit �
 
 日本語と Starship / Nerd Font の記号に対応する HackGen Console NF を標準同梱し、初期サイズは 9pt とする。未収録の日本語文字は、追加したフォントを使う場合も含め、同梱の Noto Sans CJK JP で補う。設定から「ファイル」の等幅 TTF / OTF フォントを追加し、iOSSH 内で選択できる。グリフを端末のセル幅に収め、アプリ復帰・再接続時もキーボードと補助キー行に合わせて表示領域を更新する。日本語入力には UIKit の変換機能を使い、確定した文字だけを送信する。
 
-VT パースは専用の `TerminalParserActor` 上で行い、UI へは不変のスナップショットだけを渡す。libghostty-vt バックエンド、Display P3 出力、実機での 120Hz・消費電力計測は今後の作業。画面ロック・バックグラウンド移行時は SSH 接続と端末の内容を保持する。復帰時に既存接続を確認し、生きていれば同じシェルへ復帰する。切断後の再接続は新しいシェルを開く。接続が切れた後もシェルを継続したい場合は、接続先でマルチプレクサを利用する。
+VT パースは専用の `TerminalParserActor` 上で行い、UI へは不変のスナップショットだけを渡す。libghostty-vt バックエンドは試用段階で既定ではない。SwiftTerm に出る再描画のちらつきがなく、SwiftTerm が追いつけない出力にも追従する一方、メモリ保持量が大きく（[#19](https://github.com/m96-chan/iOSSH/issues/19)）、圧縮画像と Unicode プレースホルダ配置を描画しない（[#18](https://github.com/m96-chan/iOSSH/issues/18)）。Display P3 出力、実機での 120Hz・消費電力計測は今後の作業。画面ロック・バックグラウンド移行時は SSH 接続と端末の内容を保持する。復帰時に既存接続を確認し、生きていれば同じシェルへ復帰する。切断後の再接続は新しいシェルを開く。接続が切れた後もシェルを継続したい場合は、接続先でマルチプレクサを利用する。
 
 ビルド手順、対応する鍵形式、テスト内容は [開発・検証ノート](docs/DEVELOPMENT.jp.md) を参照。
 
