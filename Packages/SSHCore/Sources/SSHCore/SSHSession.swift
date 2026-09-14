@@ -131,8 +131,11 @@ public final class SSHSession {
             try ensureCurrent(attempt)
 
             let ready = channel.eventLoop.makePromise(of: Void.self)
+            let locale = host.locale.trimmingCharacters(in: .whitespaces)
             let handler = PTYHandler(term: host.terminalType, columns: columns, rows: rows,
-                                     pixelWidth: pixelWidth, pixelHeight: pixelHeight, ready: ready)
+                                     pixelWidth: pixelWidth, pixelHeight: pixelHeight,
+                                     environment: locale.isEmpty ? [:] : ["LANG": locale],
+                                     ready: ready)
             let output = handler.output
             let child: Channel = try await channel.eventLoop.flatSubmit {
                 let created = channel.eventLoop.makePromise(of: Channel.self)

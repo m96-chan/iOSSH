@@ -14,10 +14,16 @@ public struct SSHHost: Codable, Hashable, Identifiable, Sendable {
     public var username: String
     public var authentication: SSHAuthentication
     public var terminalType: String
+    /// Sent as `LANG` when set. Empty means send nothing, which leaves the shell wherever the
+    /// host puts it. There is no value that is right everywhere: a shell left in the C locale
+    /// makes macOS `ls` replace the bytes of a Japanese filename with question marks (#21),
+    /// while a locale the host has not generated makes it complain on every command. Whoever
+    /// knows the host decides.
+    public var locale: String
 
     public init(id: UUID = UUID(), name: String, hostname: String, port: Int = 22,
                 username: String, authentication: SSHAuthentication = .password,
-                terminalType: String = "xterm-256color") {
+                terminalType: String = "xterm-256color", locale: String = "") {
         self.id = id
         self.name = name
         self.hostname = hostname
@@ -25,6 +31,7 @@ public struct SSHHost: Codable, Hashable, Identifiable, Sendable {
         self.username = username
         self.authentication = authentication
         self.terminalType = terminalType
+        self.locale = locale
     }
 
     public func validate() throws {

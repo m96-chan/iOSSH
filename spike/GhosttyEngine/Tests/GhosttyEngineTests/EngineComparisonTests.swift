@@ -22,6 +22,9 @@ struct EngineComparisonTests {
         .init(name: "palette", input: "\u{1b}[31mred\u{1b}[42mgreen-bg\u{1b}[0m", columns: 20, rows: 2),
         .init(name: "attributes", input: "\u{1b}[1mbold\u{1b}[0m \u{1b}[3mital\u{1b}[0m \u{1b}[4munder\u{1b}[0m \u{1b}[7minv\u{1b}[0m", columns: 30, rows: 2),
         .init(name: "japanese", input: "日本語とascii", columns: 20, rows: 2),
+        // macOS normalizes filenames to NFD, so a listing from one arrives decomposed: the
+        // dakuten is a separate combining codepoint rather than part of the character (#21).
+        .init(name: "decomposed japanese", input: "\u{304B}\u{3099}\u{30AB}\u{3099}", columns: 20, rows: 2),
         .init(name: "cursor moves", input: "\u{1b}[2;5Hplaced\u{1b}[1;1Htop", columns: 20, rows: 3),
         .init(name: "erase", input: "dirty\u{1b}[2J\u{1b}[Hclean", columns: 20, rows: 3),
         .init(name: "half blocks", input: "\u{1b}[38;2;255;0;0m\u{1b}[48;2;0;0;255m▀▀▀", columns: 10, rows: 2)
@@ -58,6 +61,31 @@ struct EngineComparisonTests {
             report.append(line)
         }
         print("COMPARISON\n" + report.joined(separator: "\n"))
+    }
+
+    /// #21: Japanese from a macOS host arrives decomposed. Dropping the combining codepoint
+    /// turns が into か, which reads as the text being garbled.
+    @Test func decomposedJapaneseKeepsItsCombiningMark() {
+        for engine in [SwiftTermEngine(columns: 20, rows: 2) as any TerminalEngine,
+                       GhosttyEngine(columns: 20, rows: 2)] {
+            engine.feed(Data("\u{304B}\u{3099}".utf8))
+            let cell = engine.snapshot().cells[0]
+            #expect(cell.text == "\u{304B}\u{3099}", "\(type(of: engine)) produced \(cell.text.unicodeScalars.map { String($0.value, radix: 16) })")
+        }
+    }
+
+    /// #21 also asked whether a multibyte character survives being split across chunks, which
+    /// is the ordinary case over SSH: the boundary falls wherever the network put it.
+    @Test func japaneseSplitAcrossChunksIsNotLost() {
+        let bytes = Array("日本語".utf8)
+        for engine in [SwiftTermEngine(columns: 20, rows: 2) as any TerminalEngine,
+                       GhosttyEngine(columns: 20, rows: 2)] {
+            for byte in bytes { engine.feed(Data([byte])) }
+            let cells = engine.snapshot().cells
+            #expect(cells[0].text == "日", "\(type(of: engine)) produced \(cells[0].text)")
+            #expect(cells[2].text == "本", "\(type(of: engine)) produced \(cells[2].text)")
+            #expect(cells[4].text == "語", "\(type(of: engine)) produced \(cells[4].text)")
+        }
     }
 
     @Test func throughputOfBothEngines() {
