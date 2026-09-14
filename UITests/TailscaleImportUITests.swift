@@ -16,18 +16,23 @@ final class TailscaleImportUITests: XCTestCase {
         let zephyr = app.buttons["tailscaleDevice-zephyr.tail-example.ts.net"]
         let address = app.buttons["tailscaleDevice-100.64.0.23"]
         for candidate in [atlas, zephyr, address] {
+            reveal(candidate, in: app)
             XCTAssertTrue(candidate.waitForExistence(timeout: 5))
             XCTAssertEqual(candidate.value as? String, "Not selected")
         }
+        reveal(atlas, in: app)
         atlas.tap()
+        reveal(zephyr, in: app)
         zephyr.tap()
-        XCTAssertEqual(atlas.value as? String, "Selected")
-        XCTAssertEqual(zephyr.value as? String, "Selected")
-        XCTAssertEqual(address.value as? String, "Not selected")
+        for (candidate, state) in [(atlas, "Selected"), (zephyr, "Selected"), (address, "Not selected")] {
+            reveal(candidate, in: app)
+            XCTAssertEqual(candidate.value as? String, state)
+        }
         XCTAssertEqual(save.label, "Add 2")
         XCTAssertFalse(save.isEnabled, "Selecting devices must not save hosts without an SSH username")
 
         let username = app.textFields["tailscaleImportUsername"]
+        reveal(username, in: app)
         username.tap()
         username.typeText("tester")
         XCTAssertTrue(save.isEnabled)
@@ -73,6 +78,7 @@ final class TailscaleImportUITests: XCTestCase {
         let app = launchImport()
         defer { XCUIDevice.shared.orientation = .portrait }
         let username = app.textFields["tailscaleImportUsername"]
+        reveal(username, in: app)
         username.tap()
         username.typeText("tester")
         let save = app.buttons["saveTailscaleHosts"]
@@ -138,6 +144,29 @@ final class TailscaleImportUITests: XCTestCase {
             if sidebar.exists && sidebar.label == "Show Sidebar" { sidebar.tap() }
         }
         XCTAssertTrue(importButton.waitForExistence(timeout: 5))
+    }
+
+    /// Scrolls the import sheet until `element` is on screen, in either direction.
+    ///
+    /// The sheet fills an iPhone but is a 540pt-wide form sheet on an iPad, so rows that need no
+    /// scrolling on one idiom fall below the fold on the other: on an iPad Pro 13-inch in
+    /// landscape the third device row starts at y=845.5 in a sheet that ends around y=832. A row
+    /// SwiftUI has not laid out has no accessibility element at all, so it reads as missing
+    /// rather than as present and unhittable, and asserting on it directly makes the test depend
+    /// on the window height of whichever simulator happened to run it.
+    @MainActor
+    private func reveal(_ element: XCUIElement, in app: XCUIApplication,
+                        file: StaticString = #filePath, line: UInt = #line) {
+        if element.exists, element.isHittable { return }
+        for _ in 0..<5 {
+            app.swipeUp()
+            if element.exists, element.isHittable { return }
+        }
+        for _ in 0..<10 {
+            app.swipeDown()
+            if element.exists, element.isHittable { return }
+        }
+        XCTFail("\(element) never came into view", file: file, line: line)
     }
 
     /// The sheet's manual instructions sit below its share button, so on a short screen they

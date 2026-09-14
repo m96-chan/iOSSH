@@ -1,5 +1,23 @@
 import Foundation
 
+/// A holder of decoded image pixels whose bytes are accounted against a `TerminalImageBudget`.
+///
+/// The budget started out reaching into `KittyGraphicsStore` directly, which is where
+/// `SwiftTermEngine` keeps its pixels. It is not where every engine keeps them: the
+/// libghostty-vt engine decodes the library's images into a cache of its own and is not a
+/// graphics store. Naming the one thing the budget actually needs — somewhere to send an
+/// eviction — lets both account through the same ceiling, so a memory warning and a
+/// cross-session eviction reach either engine's pixels the same way (#26).
+///
+/// Conformers are held weakly and their entries reaped once they are gone, so nothing here has
+/// to be unregistered from a deinit that cannot hop back to the parser's isolation.
+@TerminalParserActor public protocol TerminalImageBudgetOwner: AnyObject {
+    /// Drop the decoded pixels for this image. The budget has already removed its own
+    /// accounting entry before calling, so releasing the same id again from here would
+    /// subtract bytes twice.
+    func evictImage(_ id: UInt32)
+}
+
 /// A decoded-image cache budget shared by the terminal sessions in one workspace.
 /// It does not retain engines, snapshots or image bytes. Callers must release
 /// snapshots when `TerminalEngine.onImageCacheInvalidated` fires so evicted data
@@ -10,7 +28,7 @@ import Foundation
         let imageID: UInt32
     }
     private struct Entry {
-        weak var owner: KittyGraphicsStore?
+        weak var owner: (any TerminalImageBudgetOwner)?
         let bytes: Int
         var tick: UInt64
     }
@@ -38,7 +56,14 @@ import Foundation
         for key in Array(entries.keys) { evict(key) }
     }
 
-    func reserve(bytes: Int, imageID: UInt32, owner: KittyGraphicsStore) -> Bool {
+    /// Account `bytes` for one image, evicting the least recently used entries of any session
+    /// in the workspace until it fits. False means the image is larger than the whole ceiling
+    /// and the caller should not decode it at all.
+    ///
+    /// Eviction runs before this returns and can reach back into the calling owner, so a
+    /// caller must reserve before it stores the pixels rather than after.
+    @discardableResult
+    public func reserve(bytes: Int, imageID: UInt32, owner: any TerminalImageBudgetOwner) -> Bool {
         guard bytes > 0, bytes <= maximumTotalBytes else { return false }
         removeExpiredOwners()
         let key = Key(owner: ObjectIdentifier(owner), imageID: imageID)
@@ -53,19 +78,24 @@ import Foundation
         return true
     }
 
-    func touch(imageID: UInt32, owner: KittyGraphicsStore) {
+    /// Marks an image as used, so the oldest entry the next eviction picks is the one nothing
+    /// has drawn for the longest.
+    public func touch(imageID: UInt32, owner: any TerminalImageBudgetOwner) {
         let key = Key(owner: ObjectIdentifier(owner), imageID: imageID)
         guard entries[key] != nil else { return }
         tick &+= 1
         entries[key]?.tick = tick
     }
 
-    func release(imageID: UInt32, owner: KittyGraphicsStore) {
+    /// Gives back one image's bytes without calling the owner back, for an owner that has
+    /// already dropped the pixels itself.
+    public func release(imageID: UInt32, owner: any TerminalImageBudgetOwner) {
         let key = Key(owner: ObjectIdentifier(owner), imageID: imageID)
         if let entry = entries.removeValue(forKey: key) { retainedBytes -= entry.bytes }
     }
 
-    func releaseAll(owner: KittyGraphicsStore) {
+    /// Gives back every image one owner holds, for a reset that clears its cache wholesale.
+    public func releaseAll(owner: any TerminalImageBudgetOwner) {
         let ownerID = ObjectIdentifier(owner)
         for key in Array(entries.keys) where key.owner == ownerID {
             if let entry = entries.removeValue(forKey: key) { retainedBytes -= entry.bytes }
@@ -79,7 +109,7 @@ import Foundation
     }
 
     private func removeExpiredOwners() {
-        // A store can be deallocated outside MainActor. Weak ownership releases its
+        // An owner can be deallocated outside MainActor. Weak ownership releases its
         // bytes immediately; reap the metadata before every accounting decision.
         for key in Array(entries.keys) where entries[key]?.owner == nil {
             if let entry = entries.removeValue(forKey: key) { retainedBytes -= entry.bytes }

@@ -517,3 +517,97 @@ import ImageIO
         #expect(engine.snapshot()[0, 0].text == "H")
     }
 }
+
+/// The budget used to be typed on `KittyGraphicsStore`, which is only where `SwiftTermEngine`
+/// keeps its pixels. The libghostty-vt engine decodes into a cache of its own and is not a
+/// graphics store, so it stayed outside the workspace's only ceiling and outside its only
+/// answer to a memory warning (#26). These drive the budget through a conforming type that is
+/// not a graphics store, so the generalisation is covered here rather than only in the spike
+/// package that needs it.
+@Suite @TerminalParserActor struct TerminalImageBudgetOwnerTests {
+    /// Stands in for any engine that holds decoded pixels of its own.
+    private final class Holder: TerminalImageBudgetOwner {
+        var held: Set<UInt32> = []
+        var evicted: [UInt32] = []
+        func reserve(_ id: UInt32, bytes: Int, in budget: TerminalImageBudget) -> Bool {
+            guard budget.reserve(bytes: bytes, imageID: id, owner: self) else { return false }
+            held.insert(id)
+            return true
+        }
+        func evictImage(_ id: UInt32) {
+            evicted.append(id)
+            held.remove(id)
+        }
+    }
+
+    @Test func anOwnerThatIsNotAGraphicsStoreIsAccountedAndEvicted() {
+        let budget = TerminalImageBudget(maximumTotalBytes: 16)
+        let holder = Holder()
+        #expect(holder.reserve(1, bytes: 8, in: budget))
+        #expect(holder.reserve(2, bytes: 8, in: budget))
+        #expect(budget.totalBytes == 16)
+
+        // The third does not fit, so the least recently used entry pays for it — and the owner
+        // is told, which is what actually frees the pixels.
+        budget.touch(imageID: 2, owner: holder)
+        #expect(holder.reserve(3, bytes: 8, in: budget))
+        #expect(holder.evicted == [1])
+        #expect(holder.held == [2, 3])
+        #expect(budget.totalBytes == 16)
+
+        // Larger than the whole ceiling: refused rather than admitted by emptying the budget.
+        #expect(!holder.reserve(4, bytes: 32, in: budget))
+        #expect(budget.totalBytes == 16)
+    }
+
+    @Test func aMemoryWarningReachesEveryKindOfOwner() {
+        let budget = TerminalImageBudget(maximumTotalBytes: 64)
+        let holder = Holder()
+        let engine = SwiftTermEngine(columns: 12, rows: 3, imageBudget: budget)
+        var engineInvalidations = 0
+        engine.feed(kitty("a=T,f=32,s=1,v=1,i=1,C=1", Data([1, 2, 3, 255])))
+        _ = engine.snapshot()
+        engine.onImageCacheInvalidated = { engineInvalidations += 1 }
+        #expect(holder.reserve(7, bytes: 8, in: budget))
+        #expect(budget.totalBytes == 12)
+
+        budget.removeAll()
+        #expect(budget.totalBytes == 0)
+        #expect(holder.evicted == [7])
+        #expect(holder.held.isEmpty)
+        #expect(engineInvalidations == 1)
+        #expect(engine.snapshot().images.isEmpty)
+    }
+
+    @Test func anOwnerThatGoesAwayReleasesItsBytesWithoutUnregistering() {
+        let budget = TerminalImageBudget(maximumTotalBytes: 16)
+        var holder: Holder? = Holder()
+        #expect(holder?.reserve(1, bytes: 16, in: budget) == true)
+        #expect(budget.totalBytes == 16)
+        holder = nil
+        // Reaped on the next accounting decision, so a session closing on another actor cannot
+        // leave the workspace permanently full.
+        #expect(budget.totalBytes == 0)
+        let replacement = Holder()
+        #expect(replacement.reserve(1, bytes: 16, in: budget))
+    }
+
+    @Test func releaseAllClearsOneOwnerAndLeavesTheOthers() {
+        let budget = TerminalImageBudget(maximumTotalBytes: 64)
+        let first = Holder(), second = Holder()
+        #expect(first.reserve(1, bytes: 8, in: budget))
+        #expect(second.reserve(1, bytes: 8, in: budget))
+        // Same image id, different owners: they are separate entries.
+        #expect(budget.totalBytes == 16)
+        budget.releaseAll(owner: first)
+        #expect(budget.totalBytes == 8)
+        // `releaseAll` is for an owner that has already dropped its own pixels, so it does not
+        // call back.
+        #expect(first.evicted.isEmpty)
+        #expect(second.held == [1])
+    }
+
+    private func kitty(_ control: String, _ payload: Data = Data()) -> Data {
+        Data("\u{1b}_G\(control);\(payload.base64EncodedString())\u{1b}\\".utf8)
+    }
+}

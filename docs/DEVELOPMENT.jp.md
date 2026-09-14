@@ -5,24 +5,26 @@
 Xcode 26 以降、Swift 6.2 以降を使用する。アプリの対応 OS は iOS 17 以降で、iPhone / iPad 両方に対応。SSHCore と TerminalCore は macOS 14 以降でも単体テストできる。
 
 ```sh
-brew install xcodegen
+brew install xcodegen zig
 make bootstrap
 open iOSSH.xcodeproj
 ```
 
 Metal コンパイラがないと表示されたら `xcodebuild -downloadComponent MetalToolchain` で追加する。iOSSH スキームとシミュレータを選択する。実機の場合は Signing & Capabilities で開発チームを設定する。Xcode が SwiftTerm のビルドプラグインの承認を求めることがある。固定したバージョンのプラグインは Git のバージョン情報をソースに生成するもので、CLI ビルドでは `-skipPackagePluginValidation` を指定して無人実行に対応している。
 
-生成済み Xcode プロジェクトはコミットする。XcodeGen は再生成時のみ必要。`project.yml` を編集してから `xcodegen generate` を実行し、依存関係を変更した場合は `Package.resolved` もコミットする。SwiftTerm バックエンドでは Zig や XCFramework のダウンロードは不要。
+生成済み Xcode プロジェクトはコミットする。XcodeGen は再生成時のみ必要。`project.yml` を編集してから `xcodegen generate` を実行し、依存関係を変更した場合は `Package.resolved` もコミットする。
+
+Zig は libghostty-vt を試すためではなく、ビルドするために必要である。アプリのターゲットは `GhosttyEngine` に依存し、その binary target は `build/vendor/ghostty-vt.xcframework` を指す。`build/` はリポジトリに含まれないため、クローン直後はこの xcframework がなく、パッケージ解決が失敗する。そのため `make bootstrap` は xcframework がないときだけ `scripts/build_ghostty_vt.sh` を実行し、固定した Ghostty のリビジョンを取得して Zig でビルドする。数分かかるが、二回目以降はディレクトリが残っているので省略される。`scripts/build_ghostty_vt.sh` の `GHOSTTY_REF` を変更したときは、`build/vendor/ghostty-vt.xcframework` を削除して再ビルドする。
 
 ```sh
 make build                         # 署名なしのシミュレータ向けビルド
-make test                          # SSHCore / TerminalCore 単体テスト
+make test                          # SSHCore / TerminalCore / GhosttyEngine 単体テスト
 make test-ui SIMULATOR='iPhone 17'  # インストール済みの端末名を指定
 ```
 
 GitHub Actions はパッケージ単体テスト、シミュレータ向けビルド、アプリ・UI テストを実行する。アプリ単体テストは接続キャンセル、認証中のリサイズ、接続直後の切断、入力失敗、ホスト鍵承認を確認する。UI テストはホストの追加・編集・削除、入力検証、設定、ターミナルの起動と認証キャンセルを確認する。起動引数 `--ui-testing` はテスト用で、ホスト情報をメモリ内に保存する。
 
-キーボードのリサイズ UI テストは、英語キーボードの初回 QuickPath 案内を閉じてから補助行を操作する。初期状態のシミュレータでは、この OS の案内がアクセシビリティ階層に残るボタンを覆うことがある。CI は `ios-test-results` 成果物を 7 日間保存する。`CI.xcresult` という名前のフォルダへ展開して Xcode で開くと、失敗の詳細とスクリーンショットを確認できる。
+キーボードのリサイズ UI テストは、英語キーボードの初回 QuickPath 案内を閉じてから補助行を操作する。初期状態のシミュレータでは、この OS の案内がアクセシビリティ階層に残るボタンを覆うことがある。CI は `ios-test-results` 成果物を 7 日間保存する。中身はシミュレータの種別ごとに 1 つずつの結果バンドルなので、`CI-iPhone.xcresult` と `CI-iPad.xcresult` という名前のフォルダへ展開して Xcode で開くと、失敗の詳細とスクリーンショットを確認できる。
 
 ## 実機向け Debug ビルド
 
@@ -132,7 +134,7 @@ PTY へ送るウィンドウサイズには、実測したセルサイズから�
 
 ターミナルの protocol によりビューを SwiftTerm から分離する。パーサの状態・端末バッファ・デコード済み画像は `TerminalParserActor` に隔離し、UI からは `TerminalPipeline` を介して投入順に処理する。問い合わせは先行する処理の完了後に応答する。全画面の再描画は解析だけで数十ミリ秒かかるため、これをメインアクターから外すことで入力・レイアウト・描画が待たされない。レンダラへは不変のスナップショットでセル、damage、カーソル、画像を渡す。スナップショットの通知をまとめ、Metal は上限付きグリフアトラスとトリプルバッファを使用し、各バッファの変更行を更新する。非アクティブ時は描画を停止する。
 
-Kitty 画像は direct base64 の RGB / RGBA / PNG に対応し、転送量・画像・配置数に上限を設ける。未対応コマンドにはプロトコル上のエラーを返す。リサイズ時は通常の画像配置を破棄するため、接続先アプリによる再描画が必要。Unicode placeholder の配置はテキストに追従して reflow 後も保持する。別の値が接続先の要求に合うことを検証するまでは `TERM=xterm-256color` を使う。
+Kitty 画像は direct base64 の RGB / RGBA / PNG に対応し、転送量・画像・配置数に上限を設ける。zlib 圧縮 (`o=z`) の転送は保存前に展開する。試用エンジンでは libghostty-vt 自身が展開し、SwiftTerm エンジンでは `KittyZlib` が展開して、非圧縮と同じ画像あたりの上限で打ち切る。小さな転送が数 GB のピクセルを要求できないようにするため。未対応コマンドにはプロトコル上のエラーを返す。リサイズ時は通常の画像配置を破棄するため、接続先アプリによる再描画が必要。Unicode placeholder の配置はテキストに追従して reflow 後も保持する。別の値が接続先の要求に合うことを検証するまでは `TERM=xterm-256color` を使う。
 
 `swift Packages/TerminalRender/Scripts/validate-metal.swift` はシェーダーパイプラインをコンパイルして GPU で描画し、線形空間のアルファ合成を検証する。
 
@@ -192,5 +194,5 @@ python3 scripts/generate_third_party_notices.py --checkouts build/DerivedData/So
 - 実機での Keychain 生体認証、外付けキーボード、バックグラウンド動作、多言語入力。
 - 実サーバーに接続した `vttest` / `esctest`、Neovim / Helix の画像プラグイン互換性。
 - Instruments による 120Hz、大量出力、メモリ圧、アイドル時の消費電力の計測。
-- Display P3 出力、メイン actor 外へのパーサ隔離、将来の libghostty-vt バックエンド。
+- Display P3 出力、メイン actor 外へのパーサ隔離、libghostty-vt バックエンド。libghostty-vt は将来の作業ではなく、Settings で選べる試用段階の実装として同梱している。
 - keyboard-interactive、対応する鍵形式の拡充、reflow 前後の画像配置の保持。

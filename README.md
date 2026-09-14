@@ -10,7 +10,7 @@ Designed around image display through the Kitty Graphics Protocol and GPU render
 > **Status: Initial implementation — v1 acceptance testing is still in progress.**
 > The numbered sections below describe the target design. Current implementation details and gaps are listed here.
 
-The repository now contains an iPhone/iPad app with SwiftData host management, Keychain credentials, SSH PTY sessions, explicit first-use host key approval, reconnect, and a Metal terminal. The terminal uses the planned **SwiftTerm fallback** behind `TerminalEngine`; no libghostty-vt binary is required for the default build. A second backend on libghostty-vt is in trial behind a Settings picker, built by `scripts/build_ghostty_vt.sh`.
+The repository now contains an iPhone/iPad app with SwiftData host management, Keychain credentials, SSH PTY sessions, explicit first-use host key approval, reconnect, and a Metal terminal. The terminal uses the planned **SwiftTerm fallback** behind `TerminalEngine`, and that remains the default engine. A second backend on libghostty-vt is in trial behind a Settings picker; it is linked into every build rather than kept aside, so building the app needs its binary. `make bootstrap` produces it by running `scripts/build_ghostty_vt.sh`, which compiles a pinned Ghostty revision with Zig.
 
 The iPad build now includes the dedicated [iPad workspace](#ipad-ui): an adaptive host sidebar, up to four retained connection tabs, and a session menu in narrow windows. iPhone keeps its single-session flow. Physical iPad acceptance and sustained-output profiling remain to be completed.
 
@@ -18,11 +18,11 @@ Implemented authentication: passwords, OpenSSH Ed25519 keys (including supported
 
 **Import from Tailscale** obtains devices through Tailscale's official **Find Devices** Shortcuts action, then lets you select hosts and enter their SSH username in iOSSH. It requires no API token. A signed shortcut is bundled under **Set Up Shortcut**; see the [setup instructions](docs/DEVELOPMENT.md#import-tailscale-devices). Listed devices still need Tailscale SSH enabled and access allowed by their tailnet policy.
 
-Rendering includes a CoreText glyph atlas, instanced Metal drawing, 24-bit colors, keyboard shortcuts and accessory keys, selection/copy/paste, scrollback, and dark/light themes. Kitty direct RGB/RGBA/PNG transfers have bounded storage. Graphics animation, compressed transfers, relative placements, and explicit source cropping remain unsupported. Ordinary image placements are cleared on resize; Unicode placeholder placements follow the text and survive reflow.
+Rendering includes a CoreText glyph atlas, instanced Metal drawing, 24-bit colors, keyboard shortcuts and accessory keys, selection/copy/paste, scrollback, and dark/light themes. Kitty direct RGB/RGBA/PNG transfers have bounded storage, including zlib-compressed (`o=z`) payloads, which are inflated under the same per-image ceiling. Graphics animation, relative placements, and explicit source cropping remain unsupported. Ordinary image placements are cleared on resize; Unicode placeholder placements follow the text and survive reflow.
 
 The bundled HackGen Console NF font provides Japanese and Starship/Nerd Font symbols at a default size of 9 pt. Noto Sans CJK JP is bundled as the explicit Japanese fallback for missing glyphs, including when using an imported font. Settings can import additional monospaced TTF/OTF fonts from Files for use inside iOSSH. Glyphs fit the terminal's cell widths, and the visible grid is updated around the keyboard and accessory row when returning to the app or reconnecting. Japanese input uses UIKit composition and sends text only after confirmation.
 
-VT parsing runs on its own `TerminalParserActor`, off the main actor, and hands the UI immutable snapshots. The libghostty-vt backend exists as an opt-in trial and is not the default yet; it draws repaints without the flashes SwiftTerm leaves behind and keeps up with output SwiftTerm falls behind, but holds far more memory ([#19](https://github.com/m96-chan/iOSSH/issues/19)) and drops compressed and Unicode-placeholder images ([#18](https://github.com/m96-chan/iOSSH/issues/18)). Display P3 output and physical-device 120Hz/power measurements remain follow-up work. Screen lock and backgrounding retain the current SSH session and terminal contents. Returning checks the existing connection and resumes the same shell when it is alive; reconnecting after connection loss opens a new shell. Use a remote multiplexer when shell continuity across connection loss is needed.
+VT parsing runs on its own `TerminalParserActor`, off the main actor, and hands the UI immutable snapshots. The libghostty-vt backend ships alongside it and is selected in Settings; SwiftTerm is still the engine the picker starts on. It draws repaints without the flashes SwiftTerm leaves behind and keeps up with output SwiftTerm falls behind. Both engines now account decoded images against the same memory budget and draw the same Kitty transfers. Its scrollback is bounded in bytes and reclaimed by idle compression; the 486MB device measurement in [#19](https://github.com/m96-chan/iOSSH/issues/19) does not reproduce on a Mac and is being re-measured on hardware. Display P3 output and physical-device 120Hz/power measurements remain follow-up work. Screen lock and backgrounding retain the current SSH session and terminal contents. Returning checks the existing connection and resumes the same shell when it is alive; reconnecting after connection loss opens a new shell. Use a remote multiplexer when shell continuity across connection loss is needed.
 
 See [development and validation notes](docs/DEVELOPMENT.md) for build commands, key formats, and test coverage.
 
@@ -290,12 +290,12 @@ Each package must be independently testable (`TerminalCore` must support testing
 | --- | --- |
 | Xcode 26+ / Swift 6.2+ | Current resolved dependencies; deployment target remains iOS 17 |
 | [XcodeGen](https://github.com/yonaskolb/XcodeGen) | Regenerate the Xcode project after changing `project.yml` |
-| [Zig](https://ziglang.org/) (future backend only) | Not needed for the current SwiftTerm implementation |
+| [Zig](https://ziglang.org/) | Compile `build/vendor/ghostty-vt.xcframework`, which every build of the app links; `make bootstrap` runs that build when the xcframework is missing |
 
 ```bash
 git clone https://github.com/m96-chan/iOSSH.git
 cd iOSSH
-make bootstrap   # Generate the project and resolve Swift packages
+make bootstrap   # Build libghostty-vt if needed, generate the project, resolve Swift packages
 open iOSSH.xcodeproj
 ```
 

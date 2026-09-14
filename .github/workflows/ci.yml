@@ -19,8 +19,9 @@ jobs:
         run: |
           xcodebuild -version
           swift --version
-      - name: Test SSH and terminal packages
-        run: make test
+      # Reading two JSON files, so it costs nothing and is worth failing on before a build.
+      - name: Check package pins agree
+        run: make check-pins
       - name: Install Metal compiler component
         run: xcodebuild -downloadComponent MetalToolchain
       - name: Restore libghostty-vt
@@ -37,17 +38,33 @@ jobs:
         run: |
           brew install zig
           scripts/build_ghostty_vt.sh
+      # After the xcframework exists, because GhosttyEngine's tests link against it.
+      - name: Test SSH, terminal and Ghostty packages
+        run: make test
       - name: Build iPhone and iPad app
         run: make build
-      - name: Test app lifecycle and UI
+      # The bundled notices are what the store submission ships, and nothing else compares them
+      # against the dependencies the app actually links. The checkouts are the ones make build
+      # just resolved.
+      - name: Check bundled third-party notices
+        run: python3 scripts/generate_third_party_notices.py --checkouts build/DerivedData/SourcePackages/checkouts --check
+      # The iPad workspace tests are idiom-gated and skip on an iPhone, so they need a second
+      # destination. A second test invocation rather than a job matrix: the app and its test
+      # bundles are already built in this job, and the matrix would rebuild both from scratch.
+      - name: Test app lifecycle and UI on iPhone and iPad
         run: |
-          IOSSH_SIMULATOR_ID=$(xcrun simctl list devices available --json | python3 -c 'import json,sys; devices=json.load(sys.stdin)["devices"]; print(next(d["udid"] for runtime in sorted(devices, reverse=True) if "iOS" in runtime for d in devices[runtime] if d["isAvailable"] and d["name"].startswith("iPhone")))')
-          xcodebuild -project iOSSH.xcodeproj -scheme iOSSH -destination "platform=iOS Simulator,id=$IOSSH_SIMULATOR_ID" -derivedDataPath build/DerivedData -resultBundlePath build/CI.xcresult -skipPackagePluginValidation -parallel-testing-enabled NO test
+          # Both destinations boot a device, and a failing xcodebuild would otherwise leave them
+          # running for the rest of the job, so the trap covers the failure path too.
+          trap 'xcrun simctl shutdown all >/dev/null 2>&1 || true' EXIT
+          for family in iPhone iPad; do
+            udid=$(scripts/prepare_simulator.sh "$family")
+            xcodebuild -project iOSSH.xcodeproj -scheme iOSSH -destination "platform=iOS Simulator,id=$udid" -derivedDataPath build/DerivedData -resultBundlePath "build/CI-$family.xcresult" -skipPackagePluginValidation -parallel-testing-enabled NO test
+          done
       - name: Upload test results and screenshots
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: ios-test-results
-          path: build/CI.xcresult
+          path: build/CI-*.xcresult
           if-no-files-found: ignore
           retention-days: 7
