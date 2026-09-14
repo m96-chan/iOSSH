@@ -411,7 +411,7 @@ import TerminalCore
         style.size = MemoryLayout<GhosttyStyle>.size
         let hasStyle = ghostty_grid_ref_style(&ref, &style) == GHOSTTY_SUCCESS
 
-        let text = codepoint == 0 ? " " : String(UnicodeScalar(codepoint).map(String.init) ?? " ")
+        let text = codepoint == 0 ? " " : cluster(codepoint: codepoint, packed: packed, ref: &ref)
         var attributes: TerminalCellAttributes = []
         if hasStyle {
             if style.bold { attributes.insert(.bold) }
@@ -437,6 +437,30 @@ import TerminalCore
         return TerminalCell(text: width == 0 ? "" : text, width: width,
                             foreground: cellForeground, background: cellBackground,
                             attributes: attributes)
+    }
+
+    /// The cell's primary codepoint carries the base character and nothing else. A character
+    /// built from a base plus combining marks — which is how macOS hands over anything it has
+    /// normalized, so how Japanese arrives from one — keeps the marks alongside it, and reading
+    /// only the primary drops them: が becomes か (#21).
+    private func cluster(codepoint: UInt32, packed: GhosttyCell, ref: inout GhosttyGridRef) -> String {
+        let base = UnicodeScalar(codepoint).map(String.init) ?? " "
+        var tag = GHOSTTY_CELL_CONTENT_CODEPOINT
+        guard ghostty_cell_get(packed, GHOSTTY_CELL_DATA_CONTENT_TAG, &tag) == GHOSTTY_SUCCESS,
+              tag == GHOSTTY_CELL_CONTENT_CODEPOINT_GRAPHEME else { return base }
+
+        // The first call sizes the cluster; the library reports how much room it needs.
+        var count = 0
+        _ = ghostty_grid_ref_graphemes(&ref, nil, 0, &count)
+        guard count > 1, count <= 32 else { return base }
+        var codepoints = [UInt32](repeating: 0, count: count)
+        guard ghostty_grid_ref_graphemes(&ref, &codepoints, count, &count) == GHOSTTY_SUCCESS else { return base }
+        var scalars = String.UnicodeScalarView()
+        for value in codepoints.prefix(count) {
+            guard let scalar = UnicodeScalar(value) else { return base }
+            scalars.append(scalar)
+        }
+        return String(scalars)
     }
 
     private func color(_ value: GhosttyStyleColor, fallback: TerminalColor) -> TerminalColor {
