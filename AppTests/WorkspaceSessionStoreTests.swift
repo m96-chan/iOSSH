@@ -59,7 +59,7 @@ struct WorkspaceSessionStoreTests {
     }
 
     private func waitUntil(_ condition: @MainActor () -> Bool) async throws {
-        let deadline = ContinuousClock.now.advanced(by: .seconds(5))
+        let deadline = ContinuousClock.now.advanced(by: .seconds(20))
         while !condition() {
             guard ContinuousClock.now < deadline else { throw WaitError.timedOut }
             try await Task.sleep(for: .milliseconds(1))

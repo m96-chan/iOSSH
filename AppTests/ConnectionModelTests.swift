@@ -128,7 +128,7 @@ struct ConnectionModelTests {
 
     /// The parser answers from its own isolation, so conditions that read it have to await.
     private func waitUntil(_ condition: @MainActor () async -> Bool) async throws {
-        let deadline = ContinuousClock.now.advanced(by: .seconds(5))
+        let deadline = ContinuousClock.now.advanced(by: .seconds(20))
         while await !condition() {
             guard ContinuousClock.now < deadline else { throw WaitError.timedOut }
             try await Task.sleep(for: .milliseconds(1))

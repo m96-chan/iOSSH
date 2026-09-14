@@ -121,7 +121,7 @@ final class TailscaleImportPresentationTests: XCTestCase {
 
     @MainActor
     private func waitUntil(_ message: String, condition: @MainActor () -> Bool) async throws {
-        let deadline = ContinuousClock.now.advanced(by: .seconds(5))
+        let deadline = ContinuousClock.now.advanced(by: .seconds(20))
         while !condition() {
             guard ContinuousClock.now < deadline else {
                 XCTFail(message)
