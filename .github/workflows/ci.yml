@@ -12,17 +12,14 @@ permissions:
   pull-requests: read
 
 jobs:
-  ios:
-    runs-on: macos-latest
+  # A documentation-only pull request cannot change what the app builds or how it behaves, and
+  # everything below is half an hour. This is its own job so the expensive ones can name it in
+  # `if:`, and it runs on Linux because it only reads the pull request's file list.
+  scope:
+    runs-on: ubuntu-latest
+    outputs:
+      build: ${{ steps.scope.outputs.build }}
     steps:
-      - uses: actions/checkout@v7
-      # A documentation-only pull request cannot change what the app builds or how it behaves,
-      # and everything below takes about 45 minutes.
-      #
-      # Gated per step rather than with `paths-ignore` on purpose. `ios` is a required status
-      # check on main and `enforce_admins` is on, so a workflow that never runs leaves that
-      # check pending forever and the pull request becomes unmergeable by anybody, including an
-      # administrator. A job that runs and skips its steps still reports `ios` as successful.
       - name: Decide whether this change can reach the build
         id: scope
         env:
@@ -32,10 +29,13 @@ jobs:
                     --paginate --jq '.[].filename')
           printf 'Changed files:\n%s\n' "$files"
           # Markdown and the licence at the repository root are not compiled, not bundled and
-          # not read by anything here: the app's sources are App/, its only extra resource is
-          # the shortcut, and the notice generator reads Package.resolved, project.yml,
-          # scripts/build_ghostty_vt.sh and scripts/third_party_licenses. Everything else
-          # builds, including an unexpectedly empty list.
+          # not read by anything here: the app's sources are App/, its only extra bundled
+          # resource is the shortcut, and the notice generator reads Package.resolved,
+          # project.yml, scripts/build_ghostty_vt.sh and scripts/third_party_licenses. The file
+          # the app actually ships its notices in is App/Resources/ThirdPartyNotices.txt, which
+          # is not Markdown and so still builds. Everything else builds, including an
+          # unexpectedly empty list.
+          #
           # `grep -v` and not `grep -qv`: the two disagree on their exit status under at least
           # one drop-in grep in the wild, so this tests the output rather than the status.
           other=$(printf '%s\n' "$files" | grep -vE '\.md$|^LICENSE$' || true)
@@ -45,96 +45,150 @@ jobs:
           else
             echo "build=true" >> "$GITHUB_OUTPUT"
           fi
+
+  # The three package suites do not need the app, so they do not wait behind its build.
+  packages:
+    needs: scope
+    if: needs.scope.outputs.build == 'true'
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
       - name: Show toolchain
-        if: steps.scope.outputs.build == 'true'
         run: |
           xcodebuild -version
           swift --version
       # Reading two JSON files, so it costs nothing and is worth failing on before a build.
       - name: Check package pins agree
-        if: steps.scope.outputs.build == 'true'
         run: make check-pins
-      - name: Install Metal compiler component
-        if: steps.scope.outputs.build == 'true'
-        run: xcodebuild -downloadComponent MetalToolchain
       - name: Restore libghostty-vt
         id: ghostty
-        if: steps.scope.outputs.build == 'true'
         uses: actions/cache@v4
         with:
           path: build/vendor/ghostty-vt.xcframework
           key: ghostty-vt-${{ hashFiles('scripts/build_ghostty_vt.sh') }}
-      # The app links the #10 trial engine, whose xcframework is not in the repository. The
-      # cache key is the build script, which carries the pinned commit, so this runs again only
-      # when the pin moves.
+      # The app links the #10 trial engine, whose xcframework is not in the repository. See
+      # cache-ghostty.yml for why a pull request can now expect to restore rather than build it.
       - name: Build libghostty-vt
-        if: steps.scope.outputs.build == 'true' && steps.ghostty.outputs.cache-hit != 'true'
+        if: steps.ghostty.outputs.cache-hit != 'true'
         run: |
           brew install zig
           scripts/build_ghostty_vt.sh
       # After the xcframework exists, because GhosttyEngine's tests link against it.
       - name: Test SSH, terminal and Ghostty packages
-        if: steps.scope.outputs.build == 'true'
         run: make test
-      # Built once for both destinations. Splitting it was costing two extra builds: a
-      # destination change gives Xcode a different build description, so `generic/platform=iOS
-      # Simulator` and then each concrete simulator each rebuilt from scratch. On the last full
-      # run that was 3m56s for the app and another 3m45s before the iPad ran its first test,
-      # neither of which produced anything the previous build had not.
-      #
-      # The `generic` destination is gone with it. These two cover the same compilation; what
-      # they do not cover is a simulator architecture no runner has, which is not a thing this
-      # project ships to.
-      - name: Prepare the iPhone and iPad simulators
-        id: simulators
-        if: steps.scope.outputs.build == 'true'
+
+  # Built once, for the generic simulator, and handed to both idioms. Building per destination
+  # was the expensive mistake: a destination change gives Xcode a different build description,
+  # so the app build and each idiom's test run each rebuilt the same sources from scratch.
+  build:
+    needs: scope
+    if: needs.scope.outputs.build == 'true'
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Metal compiler component
+        run: xcodebuild -downloadComponent MetalToolchain
+      - name: Restore libghostty-vt
+        id: ghostty
+        uses: actions/cache@v4
+        with:
+          path: build/vendor/ghostty-vt.xcframework
+          key: ghostty-vt-${{ hashFiles('scripts/build_ghostty_vt.sh') }}
+      - name: Build libghostty-vt
+        if: steps.ghostty.outputs.cache-hit != 'true'
         run: |
-          for family in iPhone iPad; do
-            udid=$(scripts/prepare_simulator.sh "$family")
-            echo "$family=$udid" >> "$GITHUB_OUTPUT"
-          done
-      - name: Build the app and its test bundles for both idioms
-        if: steps.scope.outputs.build == 'true'
+          brew install zig
+          scripts/build_ghostty_vt.sh
+      - name: Build the app and its test bundles
         run: |
           xcodebuild -project iOSSH.xcodeproj -scheme iOSSH \
-            -destination "platform=iOS Simulator,id=${{ steps.simulators.outputs.iPhone }}" \
-            -destination "platform=iOS Simulator,id=${{ steps.simulators.outputs.iPad }}" \
+            -destination 'generic/platform=iOS Simulator' \
             -derivedDataPath build/DerivedData -skipPackagePluginValidation build-for-testing
       # The bundled notices are what the store submission ships, and nothing else compares them
       # against the dependencies the app actually links. The checkouts are the ones the build
-      # above just resolved, and this runs before the tests so a stale notice is not thirty
-      # minutes away from being reported.
+      # above just resolved, and reporting a stale notice here rather than after the tests keeps
+      # it fifteen minutes closer to the person who caused it.
       - name: Check bundled third-party notices
-        if: steps.scope.outputs.build == 'true'
         run: python3 scripts/generate_third_party_notices.py --checkouts build/DerivedData/SourcePackages/checkouts --check
-      # The iPad workspace tests are idiom-gated and skip on an iPhone, so they need a second
-      # destination. Both reuse the build above rather than making their own.
-      - name: Test app lifecycle and UI on iPhone
-        if: steps.scope.outputs.build == 'true'
-        run: |
-          xcodebuild -project iOSSH.xcodeproj -scheme iOSSH \
-            -destination "platform=iOS Simulator,id=${{ steps.simulators.outputs.iPhone }}" \
-            -derivedDataPath build/DerivedData -resultBundlePath build/CI-iPhone.xcresult \
-            -skipPackagePluginValidation -parallel-testing-enabled NO test-without-building
-      # Runs even when the iPhone failed: the build is already paid for, and one run that
-      # reports both idioms is one round trip instead of two.
-      - name: Test app lifecycle and UI on iPad
-        if: always() && steps.scope.outputs.build == 'true'
-        run: |
-          xcodebuild -project iOSSH.xcodeproj -scheme iOSSH \
-            -destination "platform=iOS Simulator,id=${{ steps.simulators.outputs.iPad }}" \
-            -derivedDataPath build/DerivedData -resultBundlePath build/CI-iPad.xcresult \
-            -skipPackagePluginValidation -parallel-testing-enabled NO test-without-building
-      # Both destinations stay booted across the steps above, so this is what shuts them down —
-      # including when a step above failed and left them running.
-      - name: Shut the simulators down
-        if: always()
-        run: xcrun simctl shutdown all >/dev/null 2>&1 || true
-      - name: Upload test results and screenshots
-        if: always() && steps.scope.outputs.build == 'true'
+      # Both runners use the same working directory, so the .xctestrun's paths resolve on the
+      # machine that downloads this.
+      - name: Upload the built test bundles
         uses: actions/upload-artifact@v7
         with:
-          name: ios-test-results
-          path: build/CI-*.xcresult
+          name: test-bundles
+          path: |
+            build/DerivedData/Build/Products/*.xctestrun
+            build/DerivedData/Build/Products/Debug-iphonesimulator
+          retention-days: 1
+          compression-level: 1
+
+  # The iPad workspace tests are idiom-gated and skip on an iPhone, so both idioms have to run.
+  # In parallel: they share nothing but the build above, and run sequentially they were half an
+  # hour on their own. `fail-fast: false` so one idiom failing still reports the other, which is
+  # the difference between one round trip and two.
+  test:
+    needs: [scope, build]
+    if: needs.scope.outputs.build == 'true'
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        family: [iPhone, iPad]
+    steps:
+      - uses: actions/checkout@v7
+      # Preparing a simulator is mostly waiting for it to boot, so it starts before the download
+      # rather than after it. An iPad left with a hardware keyboard attached, or with AutoFill
+      # on, fails the keyboard test and adds a 60s wait to every later interaction.
+      - name: Start preparing the ${{ matrix.family }} simulator
+        run: |
+          scripts/prepare_simulator.sh '${{ matrix.family }}' > simulator-udid.txt &
+          echo $! > simulator-prepare.pid
+      - name: Download the built test bundles
+        uses: actions/download-artifact@v7
+        with:
+          name: test-bundles
+          path: build/DerivedData/Build/Products
+      - name: Wait for the simulator
+        id: simulator
+        run: |
+          wait "$(cat simulator-prepare.pid)"
+          udid=$(cat simulator-udid.txt)
+          test -n "$udid"
+          echo "udid=$udid" >> "$GITHUB_OUTPUT"
+      - name: Test app lifecycle and UI on the ${{ matrix.family }}
+        run: |
+          trap 'xcrun simctl shutdown all >/dev/null 2>&1 || true' EXIT
+          xctestrun=$(echo build/DerivedData/Build/Products/*.xctestrun)
+          xcodebuild -xctestrun "$xctestrun" \
+            -destination "platform=iOS Simulator,id=${{ steps.simulator.outputs.udid }}" \
+            -resultBundlePath "build/CI-${{ matrix.family }}.xcresult" \
+            -parallel-testing-enabled NO test-without-building
+      - name: Upload test results and screenshots
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ios-test-results-${{ matrix.family }}
+          path: build/CI-${{ matrix.family }}.xcresult
           if-no-files-found: ignore
           retention-days: 7
+
+  # `ios` is the required status check on main and `enforce_admins` is on, so one check has to
+  # carry the whole workflow's verdict under that name however the jobs above are arranged. It
+  # also has to report on a documentation-only pull request, where everything above is skipped:
+  # a required check that never reports leaves the pull request unmergeable by anybody.
+  ios:
+    needs: [scope, packages, build, test]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Report the verdict
+        run: |
+          for result in '${{ needs.scope.result }}' '${{ needs.packages.result }}' \
+                        '${{ needs.build.result }}' '${{ needs.test.result }}'; do
+            echo "$result"
+            case "$result" in
+              success|skipped) ;;
+              *) echo "A job this check stands for did not pass."; exit 1 ;;
+            esac
+          done
+          echo "All jobs passed or were skipped."
