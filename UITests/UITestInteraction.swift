@@ -17,11 +17,18 @@ extension XCUIElement {
     /// The timeout is patience, not a deadline anything has to meet: reaching it means the test
     /// was going to fail regardless, and twenty seconds is not long on a CI runner that has been
     /// building for half an hour and is on its second simulator.
+    ///
+    /// Throws rather than only recording a failure. `continueAfterFailure` is true by default, so
+    /// a helper that failed and returned would let the caller carry on: `typeWhenReady` would
+    /// then type into nothing and raise a second, unrelated "no keyboard focus" error on top of
+    /// the real one, and every later helper in the test would spend its own twenty seconds
+    /// before doing the same — three times over, now that CI retries. Stopping at the first
+    /// unmet precondition keeps the report about the thing that actually went wrong.
     @MainActor
-    func tapWhenReady(timeout: TimeInterval = 20, file: StaticString = #filePath, line: UInt = #line) {
+    func tapWhenReady(timeout: TimeInterval = 20, file: StaticString = #filePath, line: UInt = #line) throws {
         guard waitUntilHittable(timeout: timeout) else {
             XCTFail("\(self) never became hittable", file: file, line: line)
-            return
+            throw UITestInteractionError.neverBecameHittable(String(describing: self))
         }
         tap()
     }
@@ -29,8 +36,8 @@ extension XCUIElement {
     /// Taps and types in one step, which is the shape every form in these tests uses.
     @MainActor
     func typeWhenReady(_ text: String, timeout: TimeInterval = 20,
-                       file: StaticString = #filePath, line: UInt = #line) {
-        tapWhenReady(timeout: timeout, file: file, line: line)
+                       file: StaticString = #filePath, line: UInt = #line) throws {
+        try tapWhenReady(timeout: timeout, file: file, line: line)
         typeText(text)
     }
 
@@ -43,8 +50,23 @@ extension XCUIElement {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
             if exists, isHittable { return true }
-            _ = waitForExistence(timeout: 0.1)
+            // An explicit sleep, not `waitForExistence(timeout:)`. That returns immediately when
+            // the element already exists, which is exactly the case here — present but not yet
+            // touchable — so using it as the throttle spins on back-to-back accessibility
+            // snapshots for the whole timeout. Querying the app that hard is a poor way to wait
+            // for it to settle.
+            Thread.sleep(forTimeInterval: 0.05)
         }
         return exists && isHittable
+    }
+}
+
+enum UITestInteractionError: Error, CustomStringConvertible {
+    case neverBecameHittable(String)
+
+    var description: String {
+        switch self {
+        case let .neverBecameHittable(element): return "\(element) never became hittable"
+        }
     }
 }
