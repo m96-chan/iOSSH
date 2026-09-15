@@ -118,7 +118,7 @@ final class TailscaleImportUITests: XCTestCase {
 
         let settings = UIDevice.current.userInterfaceIdiom == .pad
             ? app.buttons["workspaceSettings"] : app.buttons["Settings"]
-        settings.tap()
+        settings.tapWhenReady()
         XCTAssertTrue(app.staticTexts["Terminal font preview"].waitForExistence(timeout: 5))
         app.navigationBars["Settings"].buttons["Done"].tap()
         XCTAssertTrue(app.buttons["importTailscaleHosts"].waitForExistence(timeout: 5))

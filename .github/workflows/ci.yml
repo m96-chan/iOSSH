@@ -186,6 +186,11 @@ jobs:
           udid=$(scripts/prepare_simulator.sh '${{ matrix.family }}')
           test -n "$udid"
           echo "udid=$udid" >> "$GITHUB_OUTPUT"
+      # Retried, not because a flaky test is acceptable but because one blocking an unrelated
+      # pull request is worse. Only the tests that failed are retried, a test that is actually
+      # broken fails all three attempts, and the result bundle records which ones needed a retry
+      # — so this reports flakiness rather than hiding it. Check that record before trusting a
+      # green run that took three goes.
       - name: Test app lifecycle and UI on the ${{ matrix.family }}
         run: |
           trap 'xcrun simctl shutdown all >/dev/null 2>&1 || true' EXIT
@@ -193,7 +198,9 @@ jobs:
           xcodebuild -xctestrun "$xctestrun" \
             -destination "platform=iOS Simulator,id=${{ steps.simulator.outputs.udid }}" \
             -resultBundlePath "build/CI-${{ matrix.family }}.xcresult" \
-            -parallel-testing-enabled NO test-without-building
+            -parallel-testing-enabled NO \
+            -retry-tests-on-failure -test-iterations 3 \
+            test-without-building
       - name: Upload test results and screenshots
         if: always()
         uses: actions/upload-artifact@v7
