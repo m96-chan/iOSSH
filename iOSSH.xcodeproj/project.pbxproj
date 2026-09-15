@@ -13,6 +13,7 @@
 		126F1F2E6A74A9F1358D33A7 /* TailscaleHostImport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A53EAFCE919B8B842360534F /* TailscaleHostImport.swift */; };
 		1A27F80BD8BA8845F5431492 /* TailscaleImportInbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF3D87F64507E681986AEBE8 /* TailscaleImportInbox.swift */; };
 		280E96841D6B5FB2DA1950EA /* TerminalRender in Frameworks */ = {isa = PBXBuildFile; productRef = 0130968861023AF2207E184C /* TerminalRender */; };
+		2F4E7D3547D91377083B60D7 /* UITestInteraction.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8DA05394A523D1CB258AF61B /* UITestInteraction.swift */; };
 		34789C86E04E9350FF66A3F2 /* GhosttyEngine in Frameworks */ = {isa = PBXBuildFile; productRef = 33892EBDFF6FA3FEA57EB471 /* GhosttyEngine */; };
 		3492C275BD7A4FCD99475FF6 /* ThirdPartyNotices.txt in Resources */ = {isa = PBXBuildFile; fileRef = ABDE0513C54E763730592D8B /* ThirdPartyNotices.txt */; };
 		375F741B0F46FCFBDD506F79 /* TerminalViewportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11265FA4D2A5C381E689173 /* TerminalViewportTests.swift */; };
@@ -89,6 +90,7 @@
 		731526C7B108797D5F45E403 /* HostRecord.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostRecord.swift; sourceTree = "<group>"; };
 		79832E5C775352D87B6AA169 /* TerminalOutputTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalOutputTests.swift; sourceTree = "<group>"; };
 		8CB0BC27787CF8C4490CD014 /* TerminalFontLibraryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalFontLibraryTests.swift; sourceTree = "<group>"; };
+		8DA05394A523D1CB258AF61B /* UITestInteraction.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UITestInteraction.swift; sourceTree = "<group>"; };
 		911D7DEF8CB2D674031B953C /* GhosttyEngine */ = {isa = PBXFileReference; lastKnownFileType = folder; name = GhosttyEngine; path = spike/GhosttyEngine; sourceTree = SOURCE_ROOT; };
 		9DD4F05CEEF4A486E17BCFC1 /* TerminalCore */ = {isa = PBXFileReference; lastKnownFileType = folder; name = TerminalCore; path = Packages/TerminalCore; sourceTree = SOURCE_ROOT; };
 		A53EAFCE919B8B842360534F /* TailscaleHostImport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TailscaleHostImport.swift; sourceTree = "<group>"; };
@@ -145,6 +147,7 @@
 				6D1E0C43310C3EB044EB52DB /* iPadWorkspaceUITests.swift */,
 				DC54B35541FEAEB0228D113C /* KeyboardResizeUITests.swift */,
 				27587AAB792BED1360F24EF3 /* TailscaleImportUITests.swift */,
+				8DA05394A523D1CB258AF61B /* UITestInteraction.swift */,
 			);
 			path = UITests;
 			sourceTree = "<group>";
@@ -365,6 +368,7 @@
 			files = (
 				434804C23161B0F2B6237EDD /* KeyboardResizeUITests.swift in Sources */,
 				EFBBA1911C95BC26AB6B7E43 /* TailscaleImportUITests.swift in Sources */,
+				2F4E7D3547D91377083B60D7 /* UITestInteraction.swift in Sources */,
 				903CE9BF45D214388BF6D148 /* iOSSHUITests.swift in Sources */,
 				62771FFD9ACCA67D5D9B5D86 /* iPadWorkspaceUITests.swift in Sources */,
 			);

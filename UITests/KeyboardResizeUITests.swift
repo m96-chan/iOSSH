@@ -8,31 +8,23 @@ final class KeyboardResizeUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["--ui-testing"]
         app.launch()
-        XCTAssertTrue(app.buttons["addHost"].waitForExistence(timeout: 5))
-        app.buttons["addHost"].tap()
-        app.textFields["hostName"].tap()
-        app.textFields["hostName"].typeText("Keyboard resize")
-        app.textFields["hostAddress"].tap()
-        app.textFields["hostAddress"].typeText("192.0.2.1")
-        app.textFields["hostUsername"].tap()
-        app.textFields["hostUsername"].typeText("tester")
-        app.buttons["saveHost"].tap()
-        app.buttons["host-Keyboard resize"].tap()
+        app.buttons["addHost"].tapWhenReady()
+        app.textFields["hostName"].typeWhenReady("Keyboard resize")
+        app.textFields["hostAddress"].typeWhenReady("192.0.2.1")
+        app.textFields["hostUsername"].typeWhenReady("tester")
+        app.buttons["saveHost"].tapWhenReady()
+        app.buttons["host-Keyboard resize"].tapWhenReady()
         XCTAssertTrue(app.secureTextFields["Password"].waitForExistence(timeout: 10))
-        // `waitForExistence` returns while the sheet is still animating in, and on an iPad the
-        // credential prompt is a form sheet that travels further and settles later than the
-        // iPhone's. A tap delivered mid-animation is dropped: the sheet stays up, the connection
-        // stays in `.connecting`, and the button waited for below — which `TerminalScreen` only
-        // draws once the phase leaves `.connecting` — never appears at all (#35). The same
-        // settling wait guards every other button this test taps.
-        let cancel = app.buttons["Cancel"]
-        try await waitUntil("The credential sheet's Cancel must settle before it is tapped") { cancel.isHittable }
-        cancel.tap()
+        // #35 landed here. A tap delivered while the credential sheet was still animating in
+        // was dropped — worse on an iPad, where it is a form sheet that travels further and
+        // settles later — and the sheet then stayed up with the connection still `.connecting`,
+        // so the button waited for below, which `TerminalScreen` only draws once the phase
+        // leaves `.connecting`, never appeared at all. `tapWhenReady` is what stops that.
+        app.buttons["Cancel"].tapWhenReady()
         // Through `waitUntil` rather than `waitForExistence` so a failure here keeps a
-        // screenshot. Cancelling resumes the credential continuation with nil and the connection
-        // reports `.disconnected`, so the button is the visible end of that path; a screenshot is
-        // what would say whether a future failure is the sheet still being up or the phase not
-        // having moved.
+        // screenshot: it is what would say whether the sheet is still up or the phase never
+        // moved. Cancelling resumes the credential continuation with nil and the connection
+        // reports `.disconnected`, so this button is the visible end of that path.
         try await waitUntil("Cancelling the credential prompt must offer Reconnect") {
             app.buttons["Reconnect"].exists
         }
