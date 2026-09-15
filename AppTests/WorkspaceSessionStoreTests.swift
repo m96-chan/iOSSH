@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 import SSHCore
+import UIKit
 @testable import iOSSH
 
 @MainActor
@@ -188,5 +189,95 @@ struct WorkspaceSessionStoreTests {
         #expect(store.open(host: savedHost))
         #expect(!store.open(host: savedHost, newSession: true))
         #expect(store.sessions.count == 1)
+    }
+}
+
+/// #46: what the app asks iOS for when it goes to the background.
+///
+/// A suspended process cannot service its socket, which is how a session dies while the app is
+/// away — nothing in the app hangs up. A background task assertion delays suspension by about
+/// thirty seconds, which is what a glance at another app or a quick lock and unlock needs.
+@MainActor
+struct BackgroundAssertionTests {
+    private final class Recorder {
+        var begun = 0
+        var ended: [UIBackgroundTaskIdentifier] = []
+        var expire: (@MainActor () -> Void)?
+        var next = 1
+    }
+
+    private func assertions(_ recorder: Recorder) -> BackgroundAssertions {
+        BackgroundAssertions(
+            begin: { expired in
+                recorder.begun += 1
+                recorder.expire = expired
+                defer { recorder.next += 1 }
+                return UIBackgroundTaskIdentifier(rawValue: recorder.next)
+            },
+            end: { recorder.ended.append($0) }
+        )
+    }
+
+    private func host(_ name: String) -> SSHHost {
+        SSHHost(name: name, hostname: "\(name).example.test", username: "tester")
+    }
+
+    @Test func nothingIsAskedForWhenNoSessionIsConnected() async {
+        let fixture = WorkspaceFixture()
+        let store = fixture.makeStore()
+        let recorder = Recorder()
+        store.backgroundAssertions = assertions(recorder)
+        store.open(host: host("idle"))
+        store.enterBackground()
+        // The app is asking the system to stay awake. Doing that with nothing to keep alive is
+        // both wasted battery and the kind of thing that gets noticed.
+        #expect(recorder.begun == 0)
+    }
+
+    @Test func theAssertionIsGivenBackWhenTheAppReturns() async {
+        let fixture = WorkspaceFixture()
+        let store = fixture.makeStore()
+        let recorder = Recorder()
+        store.backgroundAssertions = assertions(recorder)
+        store.open(host: host("live"))
+        await connect(store.selectedSession, fixture)
+        store.enterBackground()
+        #expect(recorder.begun == 1)
+        store.enterForeground()
+        #expect(recorder.ended == [UIBackgroundTaskIdentifier(rawValue: 1)])
+    }
+
+    @Test func theAssertionIsGivenBackWhenTheTimeRunsOut() async {
+        let fixture = WorkspaceFixture()
+        let store = fixture.makeStore()
+        let recorder = Recorder()
+        store.backgroundAssertions = assertions(recorder)
+        store.open(host: host("live"))
+        await connect(store.selectedSession, fixture)
+        store.enterBackground()
+        // iOS kills an app that is still holding an assertion when its expiry handler has run.
+        recorder.expire?()
+        #expect(recorder.ended == [UIBackgroundTaskIdentifier(rawValue: 1)])
+        // Returning afterwards must not end it a second time.
+        store.enterForeground()
+        #expect(recorder.ended.count == 1)
+    }
+
+    @Test func goingToTheBackgroundTwiceHoldsOneAssertion() async {
+        let fixture = WorkspaceFixture()
+        let store = fixture.makeStore()
+        let recorder = Recorder()
+        store.backgroundAssertions = assertions(recorder)
+        store.open(host: host("live"))
+        await connect(store.selectedSession, fixture)
+        store.enterBackground()
+        store.enterBackground()
+        #expect(recorder.begun == 1)
+    }
+
+    private func connect(_ model: ConnectionModel?, _ fixture: WorkspaceFixture) async {
+        guard let model else { return }
+        fixture.transports.last?.isConnected = true
+        await model.connect()
     }
 }
