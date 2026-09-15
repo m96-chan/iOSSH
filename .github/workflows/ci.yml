@@ -36,6 +36,15 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # A push has no pull request to read a file list from — `pull_request.number` is empty
+          # and the request goes to `/pulls//files`, which is a 404 and took main red on every
+          # push. There is also nothing to skip there: whatever reached main is worth building,
+          # and this run is the only thing that reports on it.
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "Not a pull request; building."
+            echo "build=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           files=$(gh api "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" \
                     --paginate --jq '.[].filename')
           printf 'Changed files:\n%s\n' "$files"
