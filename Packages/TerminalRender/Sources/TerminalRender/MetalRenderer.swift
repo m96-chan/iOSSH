@@ -151,6 +151,36 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
     /// Encodes the same terminal frame into either an MTKView or an offscreen render target.
     /// The caller owns the render pass and must complete each use of a frame buffer before
     /// encoding more than three frames, matching the view's in-flight semaphore.
+    /// Draws one frame into a texture that is not a drawable, for the Picture in Picture window
+    /// (#39). PiP consumes pixel buffers rather than presenting a drawable, so it needs the same
+    /// encoding without `MTKView` around it.
+    ///
+    /// `isActive` is deliberately not consulted. It is false exactly when the app is not
+    /// frontmost, which is when PiP is the only thing drawing — the flag exists to stop GPU work
+    /// the system would kill us for, and PiP is the case where the system permits it.
+    func render(into texture: any MTLTexture, background: MTLClearColor,
+                completion: @escaping @Sendable () -> Void) {
+        guard inFlight.wait(timeout: .now()) == .success else { return }
+        let pass = MTLRenderPassDescriptor()
+        pass.colorAttachments[0].texture = texture
+        pass.colorAttachments[0].loadAction = .clear
+        pass.colorAttachments[0].storeAction = .store
+        pass.colorAttachments[0].clearColor = background
+        guard let command = queue.makeCommandBuffer(),
+              let encoder = command.makeRenderCommandEncoder(descriptor: pass) else {
+            inFlight.signal()
+            return
+        }
+        let semaphore = inFlight
+        command.addCompletedHandler { _ in
+            semaphore.signal()
+            completion()
+        }
+        encodeFrame(to: encoder, drawableSize: CGSize(width: texture.width, height: texture.height))
+        encoder.endEncoding()
+        command.commit()
+    }
+
     func encodeFrame(to encoder: any MTLRenderCommandEncoder, drawableSize: CGSize) {
         var viewport = SIMD2(Float(drawableSize.width), Float(drawableSize.height))
         encoder.setVertexBytes(&viewport, length: MemoryLayout<SIMD2<Float>>.stride, index: 1)

@@ -61,6 +61,13 @@ targets:
         NSFaceIDUsageDescription: Unlock your saved SSH credentials.
         NSLocalNetworkUsageDescription: Connect to SSH servers on your local network.
         CADisableMinimumFrameDurationOnPhone: true
+        # Picture in Picture is the only way iOS offers to keep a terminal on screen — and the
+        # process out of suspension, which keeps its SSH session alive (#39, #46). The controller
+        # requires this mode and an active audio session even for a source that plays nothing;
+        # `TerminalPictureInPicture` activates the session with `.mixWithOthers` so it never
+        # silences what the person is listening to.
+        UIBackgroundModes:
+          - audio
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
         UISupportedInterfaceOrientations:

@@ -80,6 +80,9 @@ public struct TerminalView: UIViewRepresentable {
     public var inputIdentity: TerminalInputIdentity?
     public var focusRequest: UUID?
     public var onWorkspaceCommand: (@MainActor (TerminalWorkspaceCommand) -> Void)?
+    /// Told when a Picture in Picture window appears or disappears, so the session it is showing
+    /// can keep publishing frames while the app is in the background (#39).
+    public var onBackgroundPresentation: (@MainActor (Bool) -> Void)?
 
     public init(surface: TerminalSurface, configuration: TerminalConfiguration = .init(),
                 onInput: @escaping @MainActor (Data) -> Void,
@@ -91,7 +94,8 @@ public struct TerminalView: UIViewRepresentable {
                 onCopySelection: (@MainActor (TerminalSelection) async -> String)? = nil,
                 inputIdentity: TerminalInputIdentity? = nil,
                 focusRequest: UUID? = nil,
-                onWorkspaceCommand: (@MainActor (TerminalWorkspaceCommand) -> Void)? = nil) {
+                onWorkspaceCommand: (@MainActor (TerminalWorkspaceCommand) -> Void)? = nil,
+                onBackgroundPresentation: (@MainActor (Bool) -> Void)? = nil) {
         self.surface = surface
         self.configuration = configuration
         self.onInput = onInput
@@ -104,6 +108,7 @@ public struct TerminalView: UIViewRepresentable {
         self.inputIdentity = inputIdentity
         self.focusRequest = focusRequest
         self.onWorkspaceCommand = onWorkspaceCommand
+        self.onBackgroundPresentation = onBackgroundPresentation
     }
 
     public func makeUIView(context: Context) -> TerminalMetalView {
@@ -126,6 +131,7 @@ public struct TerminalView: UIViewRepresentable {
         view.onCellSize = onCellSize
         view.onCopySelection = onCopySelection
         view.onWorkspaceCommand = onWorkspaceCommand
+        view.onBackgroundPresentation = onBackgroundPresentation
         view.configure(configuration)
         surface.attach(view)
         view.requestFocus(focusRequest)
@@ -182,6 +188,9 @@ public final class TerminalMetalView: MTKView, UIKeyInput, @preconcurrency UIEdi
     // a tab transition. Its result must retain its original input generation.
     var pasteTextLoader: @MainActor () async -> String? = { UIPasteboard.general.string }
     private var snapshot: TerminalSnapshot?
+    /// Draws the same frames into a Picture in Picture window while the app is not frontmost.
+    private var pictureInPicture: TerminalPictureInPicture?
+    var onBackgroundPresentation: (@MainActor (Bool) -> Void)?
     /// The surface whose grid this view currently shows; see TerminalSurface.attach(_:).
     private weak var showingSurface: TerminalSurface?
     private var cursorTimer: Timer?
@@ -221,6 +230,15 @@ public final class TerminalMetalView: MTKView, UIKeyInput, @preconcurrency UIEdi
                 let renderer = try MetalRenderer(device: device, configuration: configuration, scale: contentScaleFactor)
                 self.renderer = renderer
                 delegate = renderer
+                // #39: a second destination for the same frames, shown while the app is not
+                // frontmost. Nil on a device or simulator without PiP support, in which case
+                // everything below simply never runs.
+                pictureInPicture = TerminalPictureInPicture(device: device, container: layer)
+                pictureInPicture?.onFrameNeeded = { [weak self] in self?.presentToPictureInPicture() }
+                pictureInPicture?.onActiveChange = { [weak self] active in
+                    self?.renderer?.isActive = active || UIApplication.shared.applicationState == .active
+                    self?.onBackgroundPresentation?(active)
+                }
             } catch { showError("Terminal rendering could not start: \(error.localizedDescription)") }
         } else { showError("Metal is unavailable on this device.") }
         addSubview(inputProxy)
@@ -297,6 +315,11 @@ public final class TerminalMetalView: MTKView, UIKeyInput, @preconcurrency UIEdi
             preferredFramesPerSecond = screen.maximumFramesPerSecond
             renderer?.configure(terminalConfiguration, scale: screen.scale)
             renderer?.isActive = UIApplication.shared.applicationState == .active
+            // The audio session has to be active before the system will start Picture in Picture,
+            // and it will not ask us first — `canStartPictureInPictureAutomaticallyFromInline`
+            // means it starts as the app leaves the foreground. Preparing it when the terminal is
+            // on screen is the last moment that is still early enough (#39).
+            pictureInPicture?.prepareAudioSession()
             restartCursorTimer()
             requestViewportRefresh(forcePublication: true)
             setNeedsDisplay()
@@ -306,6 +329,10 @@ public final class TerminalMetalView: MTKView, UIKeyInput, @preconcurrency UIEdi
     public override func layoutSubviews() {
         super.layoutSubviews()
         synchronizeDrawableSize()
+        // The Picture in Picture source layer sits underneath this view's own content at the same
+        // size. It is never seen in the app — the Metal content covers it — but the system will
+        // not start a window automatically from a layer that is not really laid out (#39).
+        pictureInPicture?.layoutLayer(in: bounds)
         errorLabel?.frame = bounds.insetBy(dx: 16, dy: 16)
         visibleViewport = TerminalViewportLayout.visibleBounds(
             in: bounds, safeAreaBottom: safeAreaInsets.bottom,
@@ -525,6 +552,24 @@ public final class TerminalMetalView: MTKView, UIKeyInput, @preconcurrency UIEdi
         if cursorChanged { renderer?.cursorVisible = true }
         restartCursorTimer()
         setNeedsDisplay()
+        presentToPictureInPicture()
+    }
+
+    /// Renders the current grid into the Picture in Picture window, if one is up. The terminal is
+    /// damage-driven, so this follows the same frames the view draws rather than running a clock.
+    private func presentToPictureInPicture() {
+        // Deliberately not gated on the window being up. `AVPictureInPictureController` reports
+        // `isPictureInPicturePossible` false until its layer has content, and the system only
+        // starts a window automatically when it is possible — so waiting for the window before
+        // producing frames is a deadlock: no frames, never possible, never starts.
+        guard let pictureInPicture, pictureInPicture.needsFrame, let renderer else { return }
+        let size = drawableSize == .zero ? bounds.size * contentScaleFactor : drawableSize
+        pictureInPicture.present(renderer, size: size, background: clearColor)
+    }
+
+    /// Readies Picture in Picture so the system can start it when the app leaves the foreground.
+    public func prepareBackgroundPresentation() {
+        pictureInPicture?.prepareAudioSession()
     }
 
     public func stop() {
@@ -551,7 +596,10 @@ public final class TerminalMetalView: MTKView, UIKeyInput, @preconcurrency UIEdi
         resetTransientInput()
         cursorTimer?.invalidate()
         cursorTimer = nil
-        renderer?.isActive = false
+        // `isActive` exists to stop GPU work the system would kill the app for doing in the
+        // background. Picture in Picture is the case where the system permits it, and the
+        // window has nothing to show if this turns the renderer off (#39).
+        renderer?.isActive = pictureInPicture?.isActive == true
     }
 
     public func insertText(_ text: String) {

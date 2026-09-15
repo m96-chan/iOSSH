@@ -102,7 +102,11 @@ struct TerminalScreen: View {
                          onCopySelection: { await model.terminal.text(in: $0) },
                          inputIdentity: TerminalInputIdentity(sessionID: model.id, attemptID: model.connectionAttemptID),
                          focusRequest: allowsAuthentication && activeSheet == nil ? localFocusRequest : nil,
-                         onWorkspaceCommand: terminalWorkspaceCommand)
+                         onWorkspaceCommand: terminalWorkspaceCommand,
+                         // The window shows whichever terminal is frontmost, so the session that
+                         // keeps publishing while the app is in the background is this one and
+                         // only this one — the iPad's other retained tabs stay quiet (#39).
+                         onBackgroundPresentation: { model.setPresentedInBackground($0) })
                 .accessibilityIdentifier("terminal")
 
         if isWorkspace {

@@ -119,6 +119,12 @@ final class ConnectionModel: Identifiable {
     @ObservationIgnored private var foregroundCheck: Task<Void, Never>?
     @ObservationIgnored private var foregroundCheckID = UUID()
     @ObservationIgnored private var isInBackground = false
+    /// True while a Picture in Picture window is showing this session. Being in the background
+    /// otherwise means nothing is watching, which is what `isInBackground` stops publishing on;
+    /// this is the one case where something is (#39).
+    @ObservationIgnored private var isPresentedInBackground = false
+    /// Whether frames this session produces would reach anything.
+    private var isPublishing: Bool { isVisible && (!isInBackground || isPresentedInBackground) }
     @ObservationIgnored private var needsConnectionCheck = false
     /// Shuts off a superseded session's output. Read from the SSH read loop, which no
     /// longer runs on the main actor, so it cannot consult `attempt` directly.
@@ -353,6 +359,16 @@ final class ConnectionModel: Identifiable {
         snapshotTask = nil
         // Keep the shell, parser state, credentials, and any pending trust/authentication.
         // iOS may suspend this process; no background execution entitlement is needed.
+    }
+
+    /// A Picture in Picture window has appeared or gone. Only the session the window is showing
+    /// is told, so backgrounding the app does not leave four iPad tabs parsing for nobody.
+    func setPresentedInBackground(_ presented: Bool) {
+        guard isPresentedInBackground != presented else { return }
+        isPresentedInBackground = presented
+        // The window can start after the scene has already gone to the background and cancelled
+        // this, so scheduling here rather than assuming the order.
+        if presented { scheduleSnapshot() } else if isInBackground { snapshotTask?.cancel(); snapshotTask = nil }
     }
 
     func enterForeground() {
@@ -684,7 +700,7 @@ final class ConnectionModel: Identifiable {
     }
 
     private func scheduleSnapshot() {
-        guard isVisible, !isInBackground, snapshotTask == nil else { return }
+        guard isPublishing, snapshotTask == nil else { return }
         snapshotTask = Task { [weak self] in
             // The screen can show about 60 snapshots a second and the parser finishes work far
             // more often than that. Publishing every time does not put more on the screen: the
@@ -698,15 +714,15 @@ final class ConnectionModel: Identifiable {
             }
             let deadline = ContinuousClock.now.advanced(by: Self.maximumSnapshotDelay)
             while true {
-                guard !Task.isCancelled, let self, self.isVisible, !self.isInBackground else { return }
+                guard !Task.isCancelled, let self, self.isPublishing else { return }
                 if let value = await self.terminal.snapshotIfDrained() {
-                    guard !Task.isCancelled, self.isVisible, !self.isInBackground else { return }
+                    guard !Task.isCancelled, self.isPublishing else { return }
                     self.publish(value)
                     break
                 }
                 guard ContinuousClock.now < deadline else {
                     let value = await self.terminal.snapshot()
-                    guard !Task.isCancelled, self.isVisible, !self.isInBackground else { return }
+                    guard !Task.isCancelled, self.isPublishing else { return }
                     self.publish(value)
                     break
                 }
