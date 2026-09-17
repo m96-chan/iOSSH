@@ -118,7 +118,7 @@ final class TailscaleImportUITests: XCTestCase {
 
         let settings = UIDevice.current.userInterfaceIdiom == .pad
             ? app.buttons["workspaceSettings"] : app.buttons["Settings"]
-        settings.tapWhenReady()
+        try settings.tapWhenReady()
         XCTAssertTrue(app.staticTexts["Terminal font preview"].waitForExistence(timeout: 5))
         app.navigationBars["Settings"].buttons["Done"].tap()
         XCTAssertTrue(app.buttons["importTailscaleHosts"].waitForExistence(timeout: 5))
@@ -179,7 +179,9 @@ final class TailscaleImportUITests: XCTestCase {
             let deadline = ContinuousClock.now.advanced(by: .seconds(3))
             while ContinuousClock.now < deadline {
                 if element.isHittable { return }
-                _ = element.waitForExistence(timeout: 0.2)
+                // Sleeping rather than `waitForExistence`, which returns instantly once the
+                // element exists and so throttles nothing. See `waitUntilHittable`.
+                Thread.sleep(forTimeInterval: 0.05)
             }
             app.swipeUp()
         }

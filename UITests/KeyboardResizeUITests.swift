@@ -8,19 +8,19 @@ final class KeyboardResizeUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["--ui-testing"]
         app.launch()
-        app.buttons["addHost"].tapWhenReady()
-        app.textFields["hostName"].typeWhenReady("Keyboard resize")
-        app.textFields["hostAddress"].typeWhenReady("192.0.2.1")
-        app.textFields["hostUsername"].typeWhenReady("tester")
-        app.buttons["saveHost"].tapWhenReady()
-        app.buttons["host-Keyboard resize"].tapWhenReady()
+        try app.buttons["addHost"].tapWhenReady()
+        try app.textFields["hostName"].typeWhenReady("Keyboard resize")
+        try app.textFields["hostAddress"].typeWhenReady("192.0.2.1")
+        try app.textFields["hostUsername"].typeWhenReady("tester")
+        try app.buttons["saveHost"].tapWhenReady()
+        try app.buttons["host-Keyboard resize"].tapWhenReady()
         XCTAssertTrue(app.secureTextFields["Password"].waitForExistence(timeout: 10))
         // #35 landed here. A tap delivered while the credential sheet was still animating in
         // was dropped — worse on an iPad, where it is a form sheet that travels further and
         // settles later — and the sheet then stayed up with the connection still `.connecting`,
         // so the button waited for below, which `TerminalScreen` only draws once the phase
         // leaves `.connecting`, never appeared at all. `tapWhenReady` is what stops that.
-        app.buttons["Cancel"].tapWhenReady()
+        try app.buttons["Cancel"].tapWhenReady()
         // Through `waitUntil` rather than `waitForExistence` so a failure here keeps a
         // screenshot: it is what would say whether the sheet is still up or the phase never
         // moved. Cancelling resumes the credential continuation with nil and the connection
