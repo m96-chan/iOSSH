@@ -28,7 +28,7 @@ jobs:
       - uses: actions/checkout@v7
       - name: Restore libghostty-vt
         id: ghostty
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: build/vendor/ghostty-vt.xcframework
           key: ghostty-vt-${{ hashFiles('scripts/build_ghostty_vt.sh') }}
