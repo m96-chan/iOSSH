@@ -82,7 +82,7 @@ jobs:
         run: make check-pins
       - name: Restore libghostty-vt
         id: ghostty
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: build/vendor/ghostty-vt.xcframework
           key: ghostty-vt-${{ hashFiles('scripts/build_ghostty_vt.sh') }}
@@ -110,7 +110,7 @@ jobs:
         run: xcodebuild -downloadComponent MetalToolchain
       - name: Restore libghostty-vt
         id: ghostty
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: build/vendor/ghostty-vt.xcframework
           key: ghostty-vt-${{ hashFiles('scripts/build_ghostty_vt.sh') }}
